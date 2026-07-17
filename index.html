@@ -5828,5 +5828,125 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
+<script type="module">
+/* ============================================================
+   SYNCHRONISATION SUPABASE — login par code, pull au chargement,
+   push à chaque sauvegarde. App 100% utilisable hors-ligne.
+   ============================================================ */
+(async () => {
+  const SUPA_URL = 'https://jzrmnnrynqqcxjzxykow.supabase.co';
+  const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6cm1ubnJ5bnFxY3hqenh5a293Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NzMyMzIsImV4cCI6MjA5ODA0OTIzMn0.aiVS1C4psqmWu2Nu68b0VWnALfN5VkdOoWBnWUuJGXQ';
+  const EMAIL = 'wodlog@sylvain.app';
+  const KEYS = ['wodlog_scores_v1','wodlog_strength_profile_v1','wodlog_history_v1','wodlog_rehab_v1'];
+
+  const st = document.createElement('style');
+  st.textContent = `
+    #syncChip{position:fixed;top:10px;right:10px;z-index:900;font-size:0.72rem;font-weight:600;
+      padding:6px 10px;border-radius:20px;border:1px solid var(--border,#2a2e38);
+      background:var(--card,#171a21);color:var(--muted,#8b919e);cursor:pointer;display:flex;gap:6px;align-items:center;}
+    #syncChip.ok{color:#22c55e;border-color:#22c55e55;}
+    #syncChip.busy{color:#f59e0b;}
+    #syncChip.err{color:#f87171;border-color:#f8717155;}
+    #syncModal{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;}
+    #syncModal.show{display:flex;}
+    #syncBox{background:var(--card,#171a21);border:1px solid var(--border,#2a2e38);border-radius:14px;padding:22px;width:min(340px,92vw);}
+    #syncBox h3{margin:0 0 4px;font-size:1.05rem;color:var(--text,#e8e9ec);}
+    #syncBox p{margin:0 0 14px;font-size:0.8rem;color:var(--muted,#8b919e);line-height:1.5;}
+    #syncBox input{width:100%;background:#0f1115;border:1px solid var(--border,#2a2e38);color:var(--text,#e8e9ec);
+      padding:10px 12px;border-radius:8px;font-size:1.1rem;letter-spacing:3px;text-align:center;box-sizing:border-box;}
+    #syncBox .row{display:flex;gap:8px;margin-top:12px;}
+    #syncBox button{flex:1;border:none;border-radius:8px;padding:10px;font-size:0.85rem;font-weight:600;cursor:pointer;}
+    #syncGo{background:var(--accent,#3b82f6);color:#fff;}
+    #syncCancel{background:transparent;border:1px solid var(--border,#2a2e38);color:var(--muted,#8b919e);}
+    #syncErr{color:#f87171;font-size:0.78rem;margin-top:8px;min-height:1em;}
+  `;
+  document.head.appendChild(st);
+
+  const chip = document.createElement('div');
+  chip.id = 'syncChip';
+  chip.innerHTML = '<span>&#9729;</span><span id="syncTxt">Sync</span>';
+  document.body.appendChild(chip);
+  const setChip = (state,label)=>{ chip.className=state||''; const t=document.getElementById('syncTxt'); if(t)t.textContent=label; };
+
+  const modal = document.createElement('div');
+  modal.id = 'syncModal';
+  modal.innerHTML = ''
+    + '<div id="syncBox">'
+    + '<h3>&#128274; Synchronisation</h3>'
+    + '<p>Entre ton code pour synchroniser tes donn&eacute;es (scores, force, historique, r&eacute;&eacute;duc) entre tes appareils. Une seule fois par appareil.</p>'
+    + '<input id="syncCode" type="password" inputmode="numeric" placeholder="Code" autocomplete="current-password">'
+    + '<div id="syncErr"></div>'
+    + '<div class="row"><button id="syncCancel" type="button">Plus tard</button><button id="syncGo" type="button">Se connecter</button></div>'
+    + '</div>';
+  document.body.appendChild(modal);
+  const $ = id => document.getElementById(id);
+  const openModal = ()=>{ modal.classList.add('show'); $('syncErr').textContent=''; $('syncCode').value=''; setTimeout(()=>$('syncCode').focus(),60); };
+  const closeModal = ()=> modal.classList.remove('show');
+
+  let sb;
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+    sb = mod.createClient(SUPA_URL, SUPA_KEY);
+  } catch(e){
+    setChip('err','Sync indispo');
+    chip.onclick = ()=> alert("Synchronisation indisponible (hors-ligne ?). L'app fonctionne normalement en local.");
+    return;
+  }
+
+  let uid = null;
+  const origSet = localStorage.setItem.bind(localStorage);
+  const timers = {};
+  function enablePush(){
+    localStorage.setItem = function(k,v){ origSet(k,v); if(uid && KEYS.includes(k)) schedulePush(k,v); };
+  }
+  function schedulePush(k,v){ clearTimeout(timers[k]); timers[k]=setTimeout(()=>doPush(k,v),700); }
+  async function doPush(k,v){
+    if(!uid) return; let data; try{ data=JSON.parse(v); }catch(e){ return; }
+    setChip('busy','Sauvegarde');
+    const { error } = await sb.from('wodlog_state').upsert({ user_id:uid, key:k, data }, { onConflict:'user_id,key' });
+    setChip(error?'err':'ok', error?'Hors-ligne':'Synchro OK');
+  }
+  async function pullAll(){
+    setChip('busy','Synchro');
+    const { data, error } = await sb.from('wodlog_state').select('key,data');
+    if(error){ setChip('err','Erreur'); return; }
+    const remote = {}; (data||[]).forEach(r=> remote[r.key]=r.data);
+    for(const k of KEYS){
+      if(k in remote){ origSet(k, JSON.stringify(remote[k])); }
+      else { const loc = localStorage.getItem(k); if(loc){ try{ await sb.from('wodlog_state').upsert({user_id:uid,key:k,data:JSON.parse(loc)},{onConflict:'user_id,key'}); }catch(e){} } }
+    }
+    setChip('ok','Synchro OK');
+    refreshUI();
+  }
+  function refreshUI(){
+    try{ if(window.render) window.render(); }catch(e){}
+    try{
+      const vis = id => { const el=document.getElementById(id); return el && getComputedStyle(el).display!=='none'; };
+      if(vis('strengthPanel') && window.loadStrengthProfile){ window.loadStrengthProfile(); if(window.calculateAndRenderRadar) window.calculateAndRenderRadar(); }
+      if(vis('historyPanel') && window.initHistoryView){ window.initHistoryView(); }
+      if(vis('rehabPanel') && window.initRehabView){ window.initRehabView(); }
+    }catch(e){}
+  }
+  async function onLoggedIn(session){ uid = session.user.id; enablePush(); await pullAll(); }
+
+  $('syncCancel').onclick = closeModal;
+  $('syncGo').onclick = async ()=>{
+    const code = $('syncCode').value.trim();
+    if(!code){ $('syncErr').textContent='Entre ton code.'; return; }
+    $('syncGo').disabled=true; $('syncErr').textContent='Connexion...';
+    const { data, error } = await sb.auth.signInWithPassword({ email:EMAIL, password:code });
+    $('syncGo').disabled=false;
+    if(error){ $('syncErr').textContent='Code incorrect.'; return; }
+    closeModal(); await onLoggedIn(data.session);
+  };
+  $('syncCode').addEventListener('keydown', e=>{ if(e.key==='Enter') $('syncGo').click(); });
+  chip.onclick = async ()=>{ const { data } = await sb.auth.getSession(); if(data.session){ await pullAll(); } else { openModal(); } };
+
+  const { data } = await sb.auth.getSession();
+  if(data.session){ await onLoggedIn(data.session); }
+  else { setChip('', 'Se connecter'); openModal(); }
+})();
+</script>
+
 </body>
 </html>
