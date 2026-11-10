@@ -266,6 +266,17 @@
   .legend-dot{
     display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px;
   }
+  .detail-card{ margin-top:20px; }
+  .bars-grid{ display:grid; grid-template-columns:1fr 1fr; gap:24px; }
+  @media (max-width:700px){ .bars-grid{ grid-template-columns:1fr; } }
+  .bars-grid h4{ margin:0 0 12px; font-size:0.85rem; color:var(--text); }
+  .bar-row{ display:grid; grid-template-columns:92px 1fr 54px; gap:10px; align-items:center; margin-bottom:9px; }
+  .bar-row .bl{ font-size:0.76rem; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar-track{ position:relative; height:16px; background:#0f1115; border:1px solid var(--border); border-radius:5px; overflow:hidden; }
+  .bar-fill{ position:absolute; left:0; top:0; bottom:0; border-radius:4px 0 0 4px; transition:width .35s ease; }
+  .bar-ref{ position:absolute; top:-1px; bottom:-1px; width:2px; background:var(--text); opacity:.45; }
+  .bar-val{ font-size:0.76rem; font-weight:700; text-align:right; }
+  .tier-legend{ display:flex; gap:14px; flex-wrap:wrap; font-size:0.7rem; color:var(--muted); margin-top:6px; }
   .export-bar button.active{
     background:var(--accent); border-color:var(--accent); color:white;
   }
@@ -457,6 +468,28 @@
       </div>
     </div>
 
+  </div>
+
+  <div class="force-card detail-card">
+    <h3>📊 Vue détaillée — forces relatives & percentiles</h3>
+    <div class="bars-grid">
+      <div>
+        <h4>⚖️ Force relative (× poids de corps)</h4>
+        <div id="relBars"></div>
+        <div class="tier-legend"><span>▎ repère vertical = niveau Intermédiaire (strengthlevel)</span></div>
+      </div>
+      <div>
+        <h4>📈 Percentiles (gens de ton âge/poids)</h4>
+        <div id="pctBars"></div>
+        <div class="tier-legend">
+          <span><span class="legend-dot" style="background:#f87171;"></span>&lt;40ᵉ</span>
+          <span><span class="legend-dot" style="background:var(--warn);"></span>40–69ᵉ</span>
+          <span><span class="legend-dot" style="background:var(--accent2);"></span>≥70ᵉ</span>
+          <span>▎ = médiane (50ᵉ)</span>
+        </div>
+      </div>
+    </div>
+    <div class="disclaimer">Mêmes chiffres que l'étoile ci-dessus, mais en lecture linéaire : les barres horizontales montrent d'un coup d'œil tes points forts et les mouvements à travailler. La force relative compare ta charge à ton poids de corps ; les percentiles te situent face aux autres.</div>
   </div>
 </div>
 
@@ -4881,6 +4914,53 @@ function calculateAndRenderRadar(){
   });
 
   renderRadar(results);
+  renderStrengthBars(results, bw);
+}
+
+function renderStrengthBars(results, bw){
+  const relEl = document.getElementById("relBars");
+  const pctEl = document.getElementById("pctBars");
+  if(!relEl || !pctEl) return;
+
+  const colorFor = (pct) => pct == null ? "var(--muted)"
+    : (pct >= 70 ? "var(--accent2)" : (pct >= 40 ? "var(--warn)" : "#f87171"));
+  const emptyRow = (label) =>
+    `<div class="bar-row"><span class="bl">${label}</span><div class="bar-track"></div><span class="bar-val" style="color:var(--muted)">—</span></div>`;
+
+  // --- Force relative : seulement les mouvements chargés (×PdC) ---
+  const REL_MAX = 2.2; // pleine échelle de la barre
+  const relKeys = Object.keys(LIFT_MODELS).filter(k => LIFT_MODELS[k].type === "ratio");
+  relEl.innerHTML = relKeys.map(k => {
+    const val = parseFloat(document.getElementById(`lift_${k}`).value);
+    if(!val || !bw || bw <= 0) return emptyRow(LIFT_LABELS[k]);
+    const ratio = val / bw;
+    const w = Math.min(100, (ratio / REL_MAX) * 100);
+    const refW = Math.min(100, (LIFT_MODELS[k].mean / REL_MAX) * 100);
+    const col = colorFor(results[k]);
+    return `<div class="bar-row">
+      <span class="bl">${LIFT_LABELS[k]}</span>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${w}%;background:${col}"></div>
+        <div class="bar-ref" style="left:${refW}%"></div>
+      </div>
+      <span class="bar-val">${ratio.toFixed(2)}×</span>
+    </div>`;
+  }).join("");
+
+  // --- Percentiles : tous les mouvements ---
+  pctEl.innerHTML = Object.keys(LIFT_MODELS).map(k => {
+    const pct = results[k];
+    if(pct == null) return emptyRow(LIFT_LABELS[k]);
+    const col = colorFor(pct);
+    return `<div class="bar-row">
+      <span class="bl">${LIFT_LABELS[k]}</span>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:${Math.min(100, pct)}%;background:${col}"></div>
+        <div class="bar-ref" style="left:50%"></div>
+      </div>
+      <span class="bar-val" style="color:${col}">${pct}ᵉ</span>
+    </div>`;
+  }).join("");
 }
 
 function renderRadar(results){
