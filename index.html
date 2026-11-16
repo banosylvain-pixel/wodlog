@@ -277,6 +277,45 @@
   .bar-ref{ position:absolute; top:-1px; bottom:-1px; width:2px; background:var(--text); opacity:.45; }
   .bar-val{ font-size:0.76rem; font-weight:700; text-align:right; }
   .tier-legend{ display:flex; gap:14px; flex-wrap:wrap; font-size:0.7rem; color:var(--muted); margin-top:6px; }
+  /* ---- Plan Open 2026 ---- */
+  #planPanel{ display:none; max-width:880px; margin:0 auto; }
+  .plan-hero{ background:linear-gradient(135deg,#1b2b4d,#171a21); border:1px solid var(--border); border-radius:12px; padding:18px 20px; margin-top:10px; }
+  .plan-hero h2{ margin:0 0 6px; font-size:1.15rem; }
+  .plan-hero p{ margin:0; font-size:0.82rem; color:var(--muted); line-height:1.55; }
+  .plan-sec{ margin-top:24px; }
+  .plan-sec > h3{ font-size:1rem; margin:0 0 12px; }
+  .sess-card{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:14px; }
+  .sess-card h4{ margin:0 0 3px; font-size:0.95rem; color:var(--accent); }
+  .sess-card .sub{ font-size:0.73rem; color:var(--muted); margin-bottom:10px; }
+  .sess-card ol{ margin:0; padding-left:20px; }
+  .sess-card li{ font-size:0.84rem; line-height:1.55; margin-bottom:7px; }
+  .sess-card li b{ color:var(--text); }
+  .bmu-svg-wrap{ background:#0f1115; border:1px solid var(--border); border-radius:10px; padding:14px 10px; margin:6px 0 14px; }
+  .bmu-cap{ text-align:center; font-size:0.74rem; color:var(--muted); margin-top:6px; }
+  .bmu-steps{ counter-reset:bmu; margin:0; padding:0; list-style:none; }
+  .bmu-steps li{ position:relative; padding:9px 0 9px 42px; font-size:0.85rem; line-height:1.5; border-bottom:1px solid var(--border); }
+  .bmu-steps li:last-child{ border-bottom:none; }
+  .bmu-steps li b{ color:var(--text); }
+  .bmu-steps li::before{ counter-increment:bmu; content:counter(bmu); position:absolute; left:0; top:8px; width:26px; height:26px; background:var(--accent); color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.8rem; font-weight:700; }
+  .bmu-ladder{ list-style:none; margin:0; padding:0; }
+  .bmu-ladder li{ display:flex; gap:10px; align-items:flex-start; font-size:0.84rem; line-height:1.5; padding:9px 0; border-bottom:1px dashed var(--border); }
+  .bmu-ladder li:last-child{ border-bottom:none; }
+  .bmu-ladder .n{ flex:0 0 auto; width:22px; height:22px; border-radius:6px; background:#0f1115; border:1px solid var(--border); color:var(--accent); font-weight:700; font-size:0.74rem; display:flex; align-items:center; justify-content:center; }
+  .bench-row{ display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); font-size:0.85rem; }
+  .bench-row:last-child{ border-bottom:none; }
+  .bench-row .lab b{ color:var(--text); }
+  .bench-row .lab span{ color:var(--muted); font-size:0.76rem; }
+  .bench-goal{ font-weight:700; color:var(--accent2); white-space:nowrap; }
+  .phase-row{ display:flex; gap:10px; margin-bottom:10px; font-size:0.83rem; line-height:1.5; }
+  .phase-tag{ flex:0 0 72px; font-weight:700; font-size:0.72rem; padding:3px 8px; border-radius:6px; height:fit-content; text-align:center; }
+  .tracker-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+  .tracker-head span{ font-size:0.78rem; color:var(--accent2); font-weight:600; }
+  .tracker-row{ display:grid; grid-template-columns:1fr auto auto; gap:12px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); font-size:0.8rem; }
+  .tracker-row .wk{ color:var(--muted); }
+  .tracker-row label{ display:flex; align-items:center; gap:5px; font-size:0.76rem; cursor:pointer; color:var(--text); white-space:nowrap; }
+  .tracker-row input{ width:15px; height:15px; accent-color:var(--accent2); }
+  .plan-note{ font-size:0.78rem; color:var(--muted); line-height:1.55; }
+  .plan-note b{ color:var(--text); }
   .export-bar button.active{
     background:var(--accent); border-color:var(--accent); color:white;
   }
@@ -386,6 +425,7 @@
   <button onclick="showView('history')" id="btnViewHistory">📈 Historique & Hero/Open</button>
   <button onclick="showView('rehab')" id="btnViewRehab">🩹 Rehab</button>
   <button onclick="showView('search')" id="btnViewSearch">🔍 Par mouvement</button>
+  <button onclick="showView('plan')" id="btnViewPlan">🎯 Plan Open 2026</button>
 </div>
 
 <div class="nav-bar">
@@ -652,6 +692,159 @@
   <div class="mvt-categories" id="mvtCategories"></div>
   <div class="mvt-results" id="mvtResults"></div>
 </div>
+
+<div id="planPanel">
+
+  <div class="plan-hero">
+    <h2>🎯 Plan Open 2026</h2>
+    <p>Deux séances de 40 min/semaine, en plus de tes cours. Objectifs : passer des <b>bar muscle-ups</b> et gagner en <b>force-endurance sous charge</b> (ne plus exploser sur thrusters, wall balls, front/back squats). Opens en mars 2027.</p>
+  </div>
+
+  <div class="plan-sec">
+    <h3>🧠 Le constat</h3>
+    <div class="sess-card">
+      <p style="margin:0 0 8px;font-size:0.85rem;line-height:1.6;">Ton moteur et ton endurance au poids de corps sont <b>au-dessus de la salle</b> (push-ups, ring rows : premier, ROM complète). Ce qui te largue, c'est la <b>force absolue sous charge externe</b> — tes percentiles force sont entre le 19ᵉ et le 42ᵉ.</p>
+      <p style="margin:0;font-size:0.85rem;line-height:1.6;">La clé : la force-endurance à une charge donnée est <b>la fille de la force max</b>. Un front squat de WOD à 35 kg te coûte cher parce qu'il représente une grosse part de ton max. Monte ton plafond, et la même charge devient facile plus longtemps. <b>Re-teste ton front squat 1RM proprement</b> — il cale tout le reste.</p>
+    </div>
+  </div>
+
+  <div class="plan-sec">
+    <h3>🏋️ Tes 2 séances</h3>
+
+    <div class="sess-card">
+      <h4>SÉANCE A — Jambes &amp; charge répétable</h4>
+      <div class="sub">~40 min · force max + capacité à durer sous charge</div>
+      <ol>
+        <li><b>Back Squat 5×5</b> @ ~75 % (départ ≈63 kg), +2,5 kg/sem, en t'arrêtant à <b>RPE 8</b> (jamais le grind). Repos 2-3 min. <i>Ton squat est sous-entraîné → il répond au volume.</i></li>
+        <li><b>Thruster — clusters</b> : toutes les 90 s × 8 séries × 5 reps, charge modérée-lourde (~37-40 kg), <b>RPE 7-8, jamais à l'échec</b>. Tu montes quand les 5 restent propres. <i>C'est l'entraînement du « ne pas exploser ».</i></li>
+        <li><b>Front rack carry</b> — 3×30-40 m : barre chargée (40-50 kg) <i>ou</i> 2 haltères/KB tenus devant les épaules (2×16-20 kg), coudes hauts. Tient la position qui lâche en thrusters/FS.</li>
+      </ol>
+    </div>
+
+    <div class="sess-card">
+      <h4>SÉANCE B — Tirage, BMU &amp; wall balls</h4>
+      <div class="sub">~40 min · skill BMU (frais) + force de tirage + power-endurance</div>
+      <ol>
+        <li><b>Kip swings</b> hollow↔arch, serrés et puissants : 3×8. Puis <b>échelle BMU</b> (voir plus bas), ~12 min, pendant que tu es frais.</li>
+        <li><b>Tirage strict lourd</b> : 5×3 — weighted pull-up si tu as du lest, sinon 5 séries de « max strict −1 », pleine ROM.</li>
+        <li><b>Wall balls — power-endurance</b> : ballon <b>plus lourd</b> (10-12 kg), EMOM × 8-10 min × 7-10 reps/min, propre, sans redline.</li>
+        <li><b>Gainage anti-rotation</b> : Pallof press 3×10/côté.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="plan-sec">
+    <h3>💥 Le bar muscle-up — le mouvement expliqué</h3>
+    <div class="sess-card">
+      <p style="margin:0 0 4px;font-size:0.85rem;line-height:1.6;"><b>Le piège à casser :</b> le BMU n'est <b>pas</b> « une traction mais plus haut ». La puissance vient de la <b>hanche</b>, les bras ne font que guider puis pousser. Tu amènes la barre à toi, pas toi à la barre.</p>
+
+      <div class="bmu-svg-wrap">
+        <svg viewBox="0 0 360 214" width="100%" style="max-width:420px;display:block;margin:0 auto" role="img" aria-label="Le kip : positions hollow et arch">
+          <defs><marker id="arB" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="#3b82f6"/></marker></defs>
+          <line x1="30" y1="24" x2="330" y2="24" stroke="#8b919e" stroke-width="4" stroke-linecap="round"/>
+          <text x="180" y="15" fill="#8b919e" font-size="11" text-anchor="middle">barre fixe</text>
+          <!-- HOLLOW -->
+          <g stroke="#e8e9ec" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="105" y1="26" x2="105" y2="62"/>
+            <path d="M105 62 Q90 96 104 122"/>
+            <path d="M104 122 L132 152 L150 170"/>
+          </g>
+          <circle cx="105" cy="54" r="8" fill="#171a21" stroke="#e8e9ec" stroke-width="2.5"/>
+          <text x="112" y="190" fill="#3b82f6" font-size="12" font-weight="700" text-anchor="middle">HOLLOW</text>
+          <text x="112" y="205" fill="#8b919e" font-size="10" text-anchor="middle">côtes rentrées</text>
+          <!-- ARCH -->
+          <g stroke="#e8e9ec" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="255" y1="26" x2="255" y2="62"/>
+            <path d="M255 62 Q272 96 256 122"/>
+            <path d="M256 122 L228 152 L212 170"/>
+          </g>
+          <circle cx="255" cy="54" r="8" fill="#171a21" stroke="#e8e9ec" stroke-width="2.5"/>
+          <text x="248" y="190" fill="#3b82f6" font-size="12" font-weight="700" text-anchor="middle">ARCH</text>
+          <text x="248" y="205" fill="#8b919e" font-size="10" text-anchor="middle">poitrine ouverte</text>
+          <!-- swing -->
+          <path d="M156 104 Q180 126 204 104" stroke="#3b82f6" stroke-width="2" fill="none" marker-end="url(#arB)"/>
+          <path d="M204 92 Q180 70 156 92" stroke="#3b82f6" stroke-width="2" fill="none" marker-end="url(#arB)"/>
+        </svg>
+        <div class="bmu-cap">Le kip = un pendule hollow ↔ arch qui prend de l'ampleur. C'est lui le moteur.</div>
+      </div>
+
+      <ol class="bmu-steps">
+        <li>Depuis un <b>arch</b> puissant, tu claques les <b>hanches vers le haut et l'arrière</b> (comme si tu lançais les pieds devant).</li>
+        <li>Tu tires la barre <b>vers tes hanches</b>, pas vers ton menton — cue : <i>« hanches à la barre, barre aux hanches ».</i></li>
+        <li>Tu bascules <b>poitrine et tête en arrière</b> au-dessus de la barre quand elle arrive à ta taille.</li>
+        <li>Tu <b>pousses sur la barre</b> (bras qui s'allongent) pour passer dessus.</li>
+      </ol>
+
+      <div class="bmu-svg-wrap">
+        <svg viewBox="0 0 300 196" width="100%" style="max-width:340px;display:block;margin:0 auto" role="img" aria-label="Trajectoire de la barre : vers les hanches, pas vers le menton">
+          <defs>
+            <marker id="rwB" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="#f87171"/></marker>
+            <marker id="rgB" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="#22c55e"/></marker>
+          </defs>
+          <line x1="150" y1="40" x2="150" y2="156" stroke="#2a2e38" stroke-width="2" stroke-dasharray="4 4"/>
+          <circle cx="150" cy="40" r="9" fill="none" stroke="#e8e9ec" stroke-width="2.5"/>
+          <circle cx="150" cy="70" r="3" fill="#8b919e"/><text x="159" y="74" fill="#8b919e" font-size="11">menton</text>
+          <circle cx="150" cy="128" r="3" fill="#8b919e"/><text x="159" y="132" fill="#8b919e" font-size="11">hanches</text>
+          <line x1="112" y1="22" x2="188" y2="22" stroke="#8b919e" stroke-width="4" stroke-linecap="round"/>
+          <path d="M126 26 L140 62" stroke="#f87171" stroke-width="2.5" fill="none" marker-end="url(#rwB)"/>
+          <text x="66" y="52" fill="#f87171" font-size="11" text-anchor="middle">✗ au menton</text>
+          <path d="M178 26 Q206 86 166 124" stroke="#22c55e" stroke-width="2.5" fill="none" marker-end="url(#rgB)"/>
+          <text x="244" y="92" fill="#22c55e" font-size="11" text-anchor="middle">✓ aux hanches</text>
+        </svg>
+        <div class="bmu-cap">Le drill qui débloque : <b>lat pull-down bras tendus à l'élastique</b> (pousser la barre vers les cuisses).</div>
+      </div>
+      <p class="plan-note" style="margin-top:4px;">👉 Fais quand même vérifier ton timing hollow/arch par un coach en vrai : l'œil extérieur vaut dix explications.</p>
+    </div>
+  </div>
+
+  <div class="plan-sec">
+    <h3>🪜 Échelle BMU (à ton niveau — élastique OK)</h3>
+    <div class="sess-card">
+      <ul class="bmu-ladder">
+        <li><span class="n">1</span><div>Kip swings hollow↔arch serrés — <b>3×8</b>, en cherchant l'amplitude et la tension.</div></li>
+        <li><span class="n">2</span><div><b>Lat pull-down bras tendus à l'élastique</b> — 3×10. Le geste du « pousser la barre vers les hanches ».</div></li>
+        <li><span class="n">3</span><div><b>Tractions hautes à l'élastique</b> (viser le plus bas possible sur la poitrine) — 4×3. Le C2B strict viendra de là.</div></li>
+        <li><span class="n">4</span><div><b>Banded BMU</b> (élastique) — 4×2-3, pour graver la transition.</div></li>
+        <li><span class="n">5</span><div><b>Jumping BMU</b> depuis une box — 4×3, transition explosive.</div></li>
+        <li><span class="n">6</span><div>→ Quand banded + jumping sont solides : <b>tentatives de BMU complet</b> en fin de séance.</div></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="plan-sec">
+    <h3>🎯 Benchmarks à viser d'ici mars</h3>
+    <div class="sess-card">
+      <div class="bench-row"><div class="lab"><b>Tractions strictes</b> <span>— débloque le BMU</span></div><div class="bench-goal">8 → 12</div></div>
+      <div class="bench-row"><div class="lab"><b>Bar muscle-up</b> <span>— le gros gain de places</span></div><div class="bench-goal">1 fiable → 3</div></div>
+      <div class="bench-row"><div class="lab"><b>Back Squat 1RM</b> <span>— le plafond qui change tout</span></div><div class="bench-goal">~83 → 100 kg</div></div>
+      <div class="bench-row"><div class="lab"><b>Front Squat 1RM</b> <span>— à re-tester d'abord</span></div><div class="bench-goal">→ 95 kg</div></div>
+      <div class="bench-row"><div class="lab"><b>Strict HSPU &amp; Toes-to-bar</b> <span>— à mesurer, dis-moi</span></div><div class="bench-goal">?</div></div>
+      <p class="plan-note" style="margin-top:12px;">Logue tes vrais chiffres dans l'onglet <b>📈 Historique</b> (ils alimentent ton étoile et tes percentiles).</p>
+    </div>
+  </div>
+
+  <div class="plan-sec">
+    <h3>📅 Les phases jusqu'aux Opens</h3>
+    <div class="sess-card">
+      <div class="phase-row"><span class="phase-tag" style="background:#1e3a8a33;color:#60a5fa;">Nov-déc</span><div>Base de <b>force max</b> + apprentissage du BMU. Squats/tirages lourds, volume, groove de la transition.</div></div>
+      <div class="phase-row"><span class="phase-tag" style="background:#78350f33;color:#fbbf24;">Jan → mi-fév</span><div><b>Force-endurance &amp; capacité</b>. Tempo, clusters aux charges Open, BMU en petites séries.</div></div>
+      <div class="phase-row"><span class="phase-tag" style="background:#14532d33;color:#4ade80;">mi-fév → mars</span><div><b>Affûtage</b>. WODs Open, pic de BMU, deload avant chaque WOD annoncé.</div></div>
+    </div>
+  </div>
+
+  <div class="plan-sec">
+    <h3>✅ Suivi semaine par semaine</h3>
+    <div class="sess-card">
+      <div class="tracker-head">
+        <span style="color:var(--muted);font-size:0.78rem;">Coche chaque séance faite — c'est sauvegardé &amp; synchronisé.</span>
+        <span id="planProgress">0 séance validée</span>
+      </div>
+      <div id="planTracker"></div>
+    </div>
+  </div>
+
+</div>
+
 <div id="app"></div>
 
 <script>
@@ -4582,6 +4775,8 @@ function showView(view){
   const btnReh = document.getElementById("btnViewRehab");
   const searchPanel = document.getElementById("searchPanel");
   const btnSearch = document.getElementById("btnViewSearch");
+  const planPanel = document.getElementById("planPanel");
+  const btnPlan = document.getElementById("btnViewPlan");
 
   app.style.display = "none";
   navBar.style.display = "none";
@@ -4589,7 +4784,8 @@ function showView(view){
   historyPanel.style.display = "none";
   rehabPanel.style.display = "none";
   if(searchPanel) searchPanel.style.display = "none";
-  [btnCal, btnStr, btnHist, btnReh, btnSearch].forEach(b => { if(b) b.classList.remove("active"); });
+  if(planPanel) planPanel.style.display = "none";
+  [btnCal, btnStr, btnHist, btnReh, btnSearch, btnPlan].forEach(b => { if(b) b.classList.remove("active"); });
 
   if(view === "calendar"){
     app.style.display = "block";
@@ -4612,7 +4808,51 @@ function showView(view){
     searchPanel.style.display = "block";
     btnSearch.classList.add("active");
     initSearchView();
+  } else if(view === "plan"){
+    planPanel.style.display = "block";
+    btnPlan.classList.add("active");
+    initPlanView();
   }
+}
+
+/* ============================================================
+   PLAN OPEN 2026 — suivi 2 séances/semaine
+   ============================================================ */
+function planWeeks(){
+  const out = [];
+  let d = new Date('2026-11-16T00:00:00');
+  const off = (d.getDay() + 6) % 7;     // reculer au lundi
+  d.setDate(d.getDate() - off);
+  const end = new Date('2027-03-30T00:00:00');
+  while(d <= end){ out.push(d.toISOString().slice(0,10)); d.setDate(d.getDate() + 7); }
+  return out;
+}
+function loadPlan(){ try{ return JSON.parse(localStorage.getItem('wodlog_plan_v1')) || {}; }catch(e){ return {}; } }
+function savePlan(p){ localStorage.setItem('wodlog_plan_v1', JSON.stringify(p)); }
+function togglePlan(mon, k, v){ const p = loadPlan(); (p[mon] = p[mon] || {})[k] = v; savePlan(p); renderPlanProgress(); }
+function initPlanView(){ renderPlanTracker(); }
+function renderPlanTracker(){
+  const host = document.getElementById('planTracker');
+  if(!host) return;
+  const p = loadPlan(), wks = planWeeks();
+  host.innerHTML = wks.map((mon, i) => {
+    const st = p[mon] || {};
+    const dt = new Date(mon + 'T00:00:00');
+    const lbl = 'Sem. ' + (i+1) + ' · ' + dt.toLocaleDateString('fr-FR', {day:'2-digit', month:'short'});
+    return `<div class="tracker-row">
+      <span class="wk">${lbl}</span>
+      <label><input type="checkbox" ${st.a?'checked':''} onchange="togglePlan('${mon}','a',this.checked)"> Séance A</label>
+      <label><input type="checkbox" ${st.b?'checked':''} onchange="togglePlan('${mon}','b',this.checked)"> Séance B</label>
+    </div>`;
+  }).join('');
+  renderPlanProgress();
+}
+function renderPlanProgress(){
+  const el = document.getElementById('planProgress');
+  if(!el) return;
+  const p = loadPlan();
+  let done = 0; Object.values(p).forEach(w => { if(w.a) done++; if(w.b) done++; });
+  el.textContent = done + ' séance' + (done>1?'s':'') + ' validée' + (done>1?'s':'');
 }
 
 /* ============================================================
@@ -5917,7 +6157,7 @@ if ('serviceWorker' in navigator) {
   const SUPA_URL = 'https://jzrmnnrynqqcxjzxykow.supabase.co';
   const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6cm1ubnJ5bnFxY3hqenh5a293Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NzMyMzIsImV4cCI6MjA5ODA0OTIzMn0.aiVS1C4psqmWu2Nu68b0VWnALfN5VkdOoWBnWUuJGXQ';
   const EMAIL = 'wodlog@sylvain.app';
-  const KEYS = ['wodlog_scores_v1','wodlog_strength_profile_v1','wodlog_history_v1','wodlog_rehab_v1'];
+  const KEYS = ['wodlog_scores_v1','wodlog_strength_profile_v1','wodlog_history_v1','wodlog_rehab_v1','wodlog_plan_v1'];
 
   const st = document.createElement('style');
   st.textContent = `
