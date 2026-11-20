@@ -371,6 +371,11 @@
   .sante-table th:first-child, .sante-table td:first-child{ text-align:left; }
   .sante-table td{ text-align:right; padding:6px 8px; border-bottom:1px solid var(--border); color:var(--text); }
   #santePanel svg rect, #santePanel svg circle{ cursor:default; }
+  .scard{ cursor:pointer; transition:border-color .15s, background .15s; }
+  .scard:hover{ border-color:var(--accent); background:#1b1f27; }
+  #trendOverlay{ cursor:crosshair; }
+  #santeTip{ position:fixed; z-index:1500; pointer-events:none; background:#171a21; border:1px solid var(--border); border-radius:8px; padding:7px 10px; font-size:0.76rem; color:var(--text); line-height:1.45; display:none; box-shadow:0 4px 14px rgba(0,0,0,.45); max-width:220px; }
+  #santeTip b{ color:#fff; }
   .export-bar button.active{
     background:var(--accent); border-color:var(--accent); color:white;
   }
@@ -6384,21 +6389,21 @@ function _hm(h){ if(h==null||isNaN(h))return '—'; let hh=((h%24)+24)%24; let H
 function renderSanteCards(cyc){
   const last30=cyc.slice(-30), prior=cyc.slice(-395,-30);
   const m=(arr,k)=>_mean(arr.map(r=>r[k]));
-  function card(label,a,b,fv,fd,dir){
-    if(a==null) return `<div class="scard"><div class="sc-l">${label}</div><div class="sc-v">—</div></div>`;
+  function card(label,metric,a,b,fv,fd,dir){
+    if(a==null) return `<div class="scard" onclick="santeCard('${metric}')"><div class="sc-l">${label}</div><div class="sc-v">—</div></div>`;
     let sub='';
     if(b!=null){ const delta=a-b; const better= dir==='up'?delta>0:(dir==='down'?delta<0:null);
       const col= better==null?'var(--muted)':(better?'#22c55e':'#f87171');
       sub=`<div class="sc-s">12 mois : ${fv(b)} · <span style="color:${col}">${delta>0?'+':''}${fd(delta)}</span></div>`; }
-    return `<div class="scard"><div class="sc-l">${label}</div><div class="sc-v">${fv(a)}</div>${sub}</div>`;
+    return `<div class="scard" onclick="santeCard('${metric}')" title="Voir la courbe"><div class="sc-l">${label} <span style="color:var(--accent);font-size:0.7rem">↗</span></div><div class="sc-v">${fv(a)}</div>${sub}</div>`;
   }
   return `<div class="scards">
-    ${card('Récupération', m(last30,'recovery'), m(prior,'recovery'), v=>Math.round(v)+' %', d=>Math.round(d)+' pts','up')}
-    ${card('HRV', m(last30,'hrv'), m(prior,'hrv'), v=>v.toFixed(1)+' ms', d=>d.toFixed(1),'up')}
-    ${card('Pouls au repos', m(last30,'rhr'), m(prior,'rhr'), v=>v.toFixed(1)+' bpm', d=>d.toFixed(1),'down')}
-    ${card('Sommeil / nuit', m(last30,'asleep_min'), m(prior,'asleep_min'), v=>_hm(v/60), d=>Math.round(d)+' min','up')}
-    ${card('Endormissement', m(last30,'onset_h'), m(prior,'onset_h'), v=>_hm(v), d=>Math.round(d*60)+' min','down')}
-    ${card('Strain / jour', m(last30,'day_strain'), m(prior,'day_strain'), v=>v.toFixed(1), d=>d.toFixed(1),'neutral')}
+    ${card('Récupération','recovery', m(last30,'recovery'), m(prior,'recovery'), v=>Math.round(v)+' %', d=>Math.round(d)+' pts','up')}
+    ${card('HRV','hrv', m(last30,'hrv'), m(prior,'hrv'), v=>v.toFixed(1)+' ms', d=>d.toFixed(1),'up')}
+    ${card('Pouls au repos','rhr', m(last30,'rhr'), m(prior,'rhr'), v=>v.toFixed(1)+' bpm', d=>d.toFixed(1),'down')}
+    ${card('Sommeil / nuit','asleep_min', m(last30,'asleep_min'), m(prior,'asleep_min'), v=>_hm(v/60), d=>Math.round(d)+' min','up')}
+    ${card('Endormissement','onset_h', m(last30,'onset_h'), m(prior,'onset_h'), v=>_hm(v), d=>Math.round(d*60)+' min','down')}
+    ${card('Strain / jour','day_strain', m(last30,'day_strain'), m(prior,'day_strain'), v=>v.toFixed(1), d=>d.toFixed(1),'neutral')}
   </div>`;
 }
 
@@ -6445,7 +6450,7 @@ function vbars(data, col, fmt){
 }
 
 /* ---- onglet Tendances (sélecteur + moyenne glissante 6 mois + survol) ---- */
-const TREND_METRICS=[['recovery','Récupération (%)','#22c55e'],['hrv','HRV (ms)','#3b82f6'],['rhr','Pouls au repos (bpm)','#f59e0b'],['asleep_min','Sommeil (h)','#a78bfa'],['day_strain','Strain du jour','#ef4444']];
+const TREND_METRICS=[['recovery','Récupération (%)','#22c55e'],['hrv','HRV (ms)','#3b82f6'],['rhr','Pouls au repos (bpm)','#f59e0b'],['asleep_min','Sommeil (h)','#a78bfa'],['onset_h','Endormissement','#e879f9'],['day_strain','Strain du jour','#ef4444']];
 function tabTendances(){
   return `<div class="sante-sec"><h3>📈 Évolution sur 5 ans — moyenne par mois</h3>
     <select id="trendSel" class="sante-select">${TREND_METRICS.map(([k,l])=>`<option value="${k}" ${k===_trendMetric?'selected':''}>${l}</option>`).join('')}</select>
@@ -6454,35 +6459,72 @@ function tabTendances(){
   </div>`;
 }
 function wireTrendSelect(){ const s=document.getElementById('trendSel'); if(s) s.onchange=()=>{ _trendMetric=s.value; drawTrend(); }; drawTrend(); }
+let _trendState=null;
+function _tfv(v){ if(v==null)return '—'; const m=_trendState?_trendState.metric:_trendMetric;
+  if(m==='onset_h') return _hm(v);
+  if(m==='asleep_min') return v.toFixed(1)+' h';
+  if(m==='recovery') return Math.round(v)+' %';
+  if(m==='rhr') return Math.round(v)+' bpm';
+  return v.toFixed(1); }
 function drawTrend(){
   const el=document.getElementById('trendChart'); if(!el) return;
-  const meta=TREND_METRICS.find(x=>x[0]===_trendMetric), col=meta[2];
+  const col=(TREND_METRICS.find(x=>x[0]===_trendMetric)||[])[2]||'#3b82f6';
   const byMonth={}; _sante.cycles.forEach(r=>{ const m=(r.day||'').slice(0,7); if(m)(byMonth[m]=byMonth[m]||[]).push(r); });
   const months=Object.keys(byMonth).sort();
   const vals=months.map(m=>{ let v=_mean(byMonth[m].map(r=>r[_trendMetric])); if(v!=null && _trendMetric==='asleep_min') v=v/60; return v; });
   const roll=vals.map((_,i)=>{ const w=vals.slice(Math.max(0,i-5),i+1).filter(x=>x!=null); return w.length? w.reduce((s,x)=>s+x,0)/w.length : null; });
-  el.innerHTML = trendSVG(months, vals, roll, col, _trendMetric);
+  const W=680,H=240,padL=40,padR=8,padT=10,padB=22;
+  const all=vals.concat(roll).filter(x=>x!=null);
+  if(all.length<2){ el.innerHTML='<div class="disclaimer">pas assez de points.</div>'; _trendState=null; return; }
+  let vmin=Math.min(...all), vmax=Math.max(...all); const sp=(vmax-vmin)||1; vmin-=sp*0.08; vmax+=sp*0.08;
+  const N=months.length;
+  const xs=i=> padL+(N>1?i/(N-1):0)*(W-padL-padR);
+  const ys=v=> H-padB-((v-vmin)/(vmax-vmin))*(H-padT-padB);
+  _trendState={months,vals,roll,col,xs,ys,W,H,padT,padB,vmin,vmax,N,metric:_trendMetric};
+  el.innerHTML=trendSVG();
+  wireTrendHover();
 }
-function trendSVG(months, vals, roll, col, metric){
-  const W=680,H=240,padL=34,padR=8,padT=10,padB=22;
-  const pts=vals.map((v,i)=>({i,v})).filter(p=>p.v!=null);
-  if(pts.length<2) return `<div class="disclaimer">pas assez de points.</div>`;
-  const all=vals.concat(roll).filter(x=>x!=null); let vmin=Math.min(...all), vmax=Math.max(...all);
-  const sp=(vmax-vmin)||1; vmin-=sp*0.08; vmax+=sp*0.08;
-  const N=months.length, xs=i=> padL+(N>1?i/(N-1):0)*(W-padL-padR), ys=v=> H-padB-((v-vmin)/(vmax-vmin))*(H-padT-padB);
-  const fv=v=> metric==='asleep_min'?v.toFixed(1):(metric==='hrv'||metric==='day_strain'?v.toFixed(1):Math.round(v));
+function trendSVG(){
+  const S=_trendState,{months,vals,roll,col,xs,ys,W,H,padT,padB,vmin,vmax}=S;
   const path=arr=>{ let d='',on=false; arr.forEach((v,i)=>{ if(v==null){on=false;return;} d+=(on?'L':'M')+xs(i).toFixed(1)+' '+ys(v).toFixed(1)+' '; on=true; }); return d; };
-  const dots=months.map((m,i)=> vals[i]==null?'':`<circle cx="${xs(i).toFixed(1)}" cy="${ys(vals[i]).toFixed(1)}" r="7" fill="transparent"><title>${m} : ${fv(vals[i])}</title></circle>`).join('');
-  const ticks=[vmax-(vmax-vmin)*0.12, (vmin+vmax)/2, vmin+(vmax-vmin)*0.12].map(t=>`<text x="2" y="${(ys(t)+3).toFixed(1)}" fill="#8b919e" font-size="10">${fv(t)}</text>`).join('');
+  const ticks=[vmax-(vmax-vmin)*0.12,(vmin+vmax)/2,vmin+(vmax-vmin)*0.12].map(t=>`<text x="2" y="${(ys(t)+3).toFixed(1)}" fill="#8b919e" font-size="10">${_tfv(t)}</text>`).join('');
   const yr={}; months.forEach((m,i)=>{ const y=m.slice(0,4); if(!(y in yr)) yr[y]=i; });
   const xlabs=Object.entries(yr).map(([y,i])=>`<text x="${xs(i).toFixed(1)}" y="${H-6}" fill="#8b919e" font-size="10" text-anchor="middle">${y}</text>`).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="height:auto;display:block">
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="height:auto;display:block;touch-action:none">
     ${ticks}${xlabs}
     <path d="${path(vals)}" fill="none" stroke="#3a3f4a" stroke-width="1.3"/>
     <path d="${path(roll)}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round"/>
-    ${dots}
+    <line id="trendCross" x1="0" y1="${padT}" x2="0" y2="${H-padB}" stroke="#8b919e" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>
+    <circle id="trendMk" r="4" fill="${col}" style="display:none"/>
+    <rect id="trendOverlay" x="0" y="0" width="${W}" height="${H}" fill="transparent"/>
   </svg>`;
 }
+function _santeTip(){ let t=document.getElementById('santeTip'); if(!t){ t=document.createElement('div'); t.id='santeTip'; document.body.appendChild(t); } return t; }
+function wireTrendHover(){
+  const el=document.getElementById('trendChart'); const svg=el&&el.querySelector('svg'); if(!svg||!_trendState) return;
+  const S=_trendState, tip=_santeTip();
+  const cross=svg.querySelector('#trendCross'), mk=svg.querySelector('#trendMk');
+  const hide=()=>{ tip.style.display='none'; if(cross)cross.style.display='none'; if(mk)mk.style.display='none'; };
+  function move(cx,cy){
+    const rect=svg.getBoundingClientRect(); if(!rect.width) return;
+    const px=(cx-rect.left)/rect.width*S.W;
+    let best=-1,bd=1e9; for(let i=0;i<S.N;i++){ if(S.vals[i]==null)continue; const d=Math.abs(S.xs(i)-px); if(d<bd){bd=d;best=i;} }
+    if(best<0){ hide(); return; }
+    const x=S.xs(best), y=S.ys(S.vals[best]);
+    cross.setAttribute('x1',x); cross.setAttribute('x2',x); cross.style.display='';
+    mk.setAttribute('cx',x); mk.setAttribute('cy',y); mk.style.display='';
+    const lbl=(TREND_METRICS.find(t=>t[0]===S.metric)||['','valeur'])[1];
+    tip.innerHTML=`<b>${S.months[best]}</b><br>${lbl} : <b>${_tfv(S.vals[best])}</b>`+(S.roll[best]!=null?`<br><span style="color:${S.col}">gliss. 6 m : ${_tfv(S.roll[best])}</span>`:'');
+    tip.style.display='block';
+    tip.style.left=Math.min(cx+14, window.innerWidth-180)+'px';
+    tip.style.top=(cy+14)+'px';
+  }
+  svg.onmousemove=e=>move(e.clientX,e.clientY);
+  svg.onmouseleave=hide;
+  svg.ontouchmove=e=>{ if(e.touches[0]){ move(e.touches[0].clientX,e.touches[0].clientY); e.preventDefault(); } };
+  svg.ontouchend=hide;
+}
+function santeCard(metric){ _trendMetric=metric; santeTab('tend'); const b=document.getElementById('santeTabBody'); if(b) b.scrollIntoView({behavior:'smooth',block:'start'}); }
 
 /* ---- onglet Sommeil ---- */
 function tabSommeil(cyc){
