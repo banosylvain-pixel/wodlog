@@ -354,6 +354,23 @@
   .rel-row .rfill{ position:absolute; left:0; top:0; bottom:0; }
   .rel-row .rv{ text-align:right; font-weight:700; }
   .rel-row .rv .rn{ color:var(--muted); font-weight:400; font-size:0.7rem; margin-left:4px; }
+  .scards{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:16px; }
+  @media(max-width:600px){ .scards{ grid-template-columns:repeat(2,1fr); } }
+  .scard{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+  .scard .sc-l{ font-size:0.72rem; color:var(--muted); }
+  .scard .sc-v{ font-size:1.25rem; font-weight:800; margin-top:2px; }
+  .scard .sc-s{ font-size:0.68rem; color:var(--muted); margin-top:3px; }
+  .sante-subnav{ display:flex; gap:4px; flex-wrap:wrap; margin:20px 0 4px; border-bottom:1px solid var(--border); }
+  .sante-subnav .stab{ background:transparent; border:none; border-bottom:2px solid transparent; color:var(--muted); padding:8px 10px; font-size:0.82rem; font-weight:600; cursor:pointer; }
+  .sante-subnav .stab.active{ color:var(--text); border-bottom-color:var(--accent); }
+  .sante-select{ background:#0f1115; border:1px solid var(--border); color:var(--text); padding:7px 10px; border-radius:8px; font-size:0.85rem; margin-bottom:10px; }
+  .sante-sec .sub2{ font-size:0.72rem; color:var(--muted); font-weight:400; }
+  .sante-table-wrap{ overflow-x:auto; margin-top:10px; }
+  .sante-table{ width:100%; border-collapse:collapse; font-size:0.78rem; white-space:nowrap; }
+  .sante-table th{ text-align:right; color:var(--muted); font-weight:600; padding:6px 8px; border-bottom:1px solid var(--border); }
+  .sante-table th:first-child, .sante-table td:first-child{ text-align:left; }
+  .sante-table td{ text-align:right; padding:6px 8px; border-bottom:1px solid var(--border); color:var(--text); }
+  #santePanel svg rect, #santePanel svg circle{ cursor:default; }
   .export-bar button.active{
     background:var(--accent); border-color:var(--accent); color:white;
   }
@@ -6296,6 +6313,18 @@ if ('serviceWorker' in navigator) {
    SANTÉ — lecture des données Whoop depuis Supabase (vue v_day)
    ============================================================ */
 function santeMsg(t){ return `<div class="sante-msg">${t}</div>`; }
+let _sante = null, _santeTab = 'tend', _trendMetric = 'recovery';
+async function _pageAll(sb, table, cols, orderCol){
+  let all=[], from=0; const P=1000;
+  while(true){
+    const { data, error } = await sb.from(table).select(cols).order(orderCol).range(from, from+P-1);
+    if(error) return all;
+    all = all.concat(data||[]);
+    if(!data || data.length < P) break;
+    from += P;
+  }
+  return all;
+}
 async function initSanteView(){
   const host = document.getElementById('santeBody');
   if(!host) return;
@@ -6304,13 +6333,13 @@ async function initSanteView(){
   let sess;
   try { sess = (await sb.auth.getSession()).data.session; } catch(e){ sess = null; }
   if(!sess){ host.innerHTML = santeMsg("Connecte-toi avec ton code (pastille « Sync » en haut à droite) pour afficher tes données santé."); return; }
+  if(_sante){ renderSanteShell(host); return; }
   host.innerHTML = santeMsg("Chargement de tes données Whoop…");
-  const { data, error } = await sb.from('v_day')
-    .select('day,recovery,rhr,hrv,day_strain,asleep_min,onset_h,prev_strain')
-    .order('day').limit(5000);
-  if(error){ host.innerHTML = santeMsg("Erreur de lecture : " + error.message); return; }
-  if(!data || !data.length){ host.innerHTML = santeMsg("Aucune donnée Whoop dans ta base pour l'instant."); return; }
-  renderSante(host, data);
+  const cycles = await _pageAll(sb,'v_day','day,recovery,rhr,hrv,day_strain,asleep_min,onset_h,prev_strain','day');
+  const workouts = await _pageAll(sb,'whoop_workouts','local_date,duration_min,activity,strain,z4,z5','local_date');
+  if(!cycles.length){ host.innerHTML = santeMsg("Aucune donnée Whoop dans ta base pour l'instant."); return; }
+  _sante = { cycles, workouts };
+  renderSanteShell(host);
 }
 function _mean(a){ a = a.filter(x => x!=null && !isNaN(x)).map(Number); return a.length ? a.reduce((s,x)=>s+x,0)/a.length : null; }
 function santeTile(label,val,col){ return `<div class="sante-tile"><div class="st-v" style="color:${col}">${val}</div><div class="st-l">${label}</div></div>`; }
@@ -6349,37 +6378,148 @@ function lineCard(title, labels, values, col){
     </svg>
     <div class="lc-ax"><span>${labels[0]}</span><span>${labels[labels.length-1]}</span></div></div>`;
 }
-function renderSante(host, rows){
-  const last30 = rows.slice(-30);
-  const tiles = `<div class="sante-tiles">
-    ${santeTile('Récup', (v=>v!=null?Math.round(v)+'%':'—')(_mean(last30.map(r=>r.recovery))), '#22c55e')}
-    ${santeTile('HRV', (v=>v!=null?v.toFixed(0)+' ms':'—')(_mean(last30.map(r=>r.hrv))), '#3b82f6')}
-    ${santeTile('Pouls repos', (v=>v!=null?v.toFixed(0)+' bpm':'—')(_mean(last30.map(r=>r.rhr))), '#f59e0b')}
-    ${santeTile('Sommeil', (v=>v!=null?(v/60).toFixed(1)+' h':'—')(_mean(last30.map(r=>r.asleep_min))), '#a78bfa')}
-  </div>`;
+function _hm(h){ if(h==null||isNaN(h))return '—'; let hh=((h%24)+24)%24; let H=Math.floor(hh), M=Math.round((hh-H)*60); if(M===60){H+=1;M=0;} H=((H%24)+24)%24; return H+'h'+String(M).padStart(2,'0'); }
 
-  const byMonth = {};
-  rows.forEach(r=>{ const m=(r.day||'').slice(0,7); if(m) (byMonth[m]=byMonth[m]||[]).push(r); });
-  const months = Object.keys(byMonth).sort();
-  const lbl = m => { const [y,mo]=m.split('-'); return mo+'/'+y.slice(2); };
-  const labels = months.map(lbl);
-  const trends = `<div class="sante-sec"><h3>📈 Tendances — moyenne par mois (${months.length} mois)</h3>
-    ${lineCard('Récupération (%)', labels, months.map(m=>_mean(byMonth[m].map(r=>r.recovery))), '#22c55e')}
-    ${lineCard('HRV (ms)', labels, months.map(m=>_mean(byMonth[m].map(r=>r.hrv))), '#3b82f6')}
-    ${lineCard('Pouls au repos (bpm)', labels, months.map(m=>_mean(byMonth[m].map(r=>r.rhr))), '#f59e0b')}
+/* ---- cartes de comparaison 30j vs 12 mois précédents ---- */
+function renderSanteCards(cyc){
+  const last30=cyc.slice(-30), prior=cyc.slice(-395,-30);
+  const m=(arr,k)=>_mean(arr.map(r=>r[k]));
+  function card(label,a,b,fv,fd,dir){
+    if(a==null) return `<div class="scard"><div class="sc-l">${label}</div><div class="sc-v">—</div></div>`;
+    let sub='';
+    if(b!=null){ const delta=a-b; const better= dir==='up'?delta>0:(dir==='down'?delta<0:null);
+      const col= better==null?'var(--muted)':(better?'#22c55e':'#f87171');
+      sub=`<div class="sc-s">12 mois : ${fv(b)} · <span style="color:${col}">${delta>0?'+':''}${fd(delta)}</span></div>`; }
+    return `<div class="scard"><div class="sc-l">${label}</div><div class="sc-v">${fv(a)}</div>${sub}</div>`;
+  }
+  return `<div class="scards">
+    ${card('Récupération', m(last30,'recovery'), m(prior,'recovery'), v=>Math.round(v)+' %', d=>Math.round(d)+' pts','up')}
+    ${card('HRV', m(last30,'hrv'), m(prior,'hrv'), v=>v.toFixed(1)+' ms', d=>d.toFixed(1),'up')}
+    ${card('Pouls au repos', m(last30,'rhr'), m(prior,'rhr'), v=>v.toFixed(1)+' bpm', d=>d.toFixed(1),'down')}
+    ${card('Sommeil / nuit', m(last30,'asleep_min'), m(prior,'asleep_min'), v=>_hm(v/60), d=>Math.round(d)+' min','up')}
+    ${card('Endormissement', m(last30,'onset_h'), m(prior,'onset_h'), v=>_hm(v), d=>Math.round(d*60)+' min','down')}
+    ${card('Strain / jour', m(last30,'day_strain'), m(prior,'day_strain'), v=>v.toFixed(1), d=>d.toFixed(1),'neutral')}
   </div>`;
+}
 
-  const sleepB = _bucketMeans(rows, r=>_bucketSleep(r.asleep_min), r=>r.recovery, ['<6h','6-7h','7-8h','8-8.5h','>8.5h']);
-  const bedB   = _bucketMeans(rows, r=>_bucketBed(r.onset_h),     r=>r.recovery, ['av. 22h','22-23h','23h-0h','0h-1h','ap. 1h']);
-  const strB   = _bucketMeans(rows, r=>_bucketStrain(r.prev_strain), r=>r.recovery, ['<6','6-10','10-15','≥15']);
-  const rel = `<div class="sante-sec"><h3>🔗 Ce qui va avec ta récupération</h3>
-    ${relBlock('Durée de sommeil → récup', sleepB)}
-    ${relBlock('Heure d\'endormissement → récup', bedB)}
-    ${relBlock('Strain de la veille → récup', strB)}
-    <div class="disclaimer">« Va avec », pas « cause ». Le n est affiché ; sous 30 c'est fragile (⚠), sous 15 c'est masqué.</div>
+const SANTE_TABS=[['tend','Tendances'],['sommeil','Sommeil'],['entr','Entraînement'],['j30','30 jours']];
+function renderSanteShell(host){
+  host.innerHTML = renderSanteCards(_sante.cycles)
+    + `<div class="sante-subnav">${SANTE_TABS.map(([k,l])=>`<button class="stab" data-k="${k}" onclick="santeTab('${k}')">${l}</button>`).join('')}</div>`
+    + `<div id="santeTabBody"></div>`;
+  santeTab(_santeTab);
+}
+function santeTab(k){
+  _santeTab=k;
+  document.querySelectorAll('.sante-subnav .stab').forEach(b=>b.classList.toggle('active', b.getAttribute('data-k')===k));
+  const b=document.getElementById('santeTabBody'); if(!b) return;
+  if(k==='tend'){ b.innerHTML=tabTendances(); wireTrendSelect(); }
+  else if(k==='sommeil') b.innerHTML=tabSommeil(_sante.cycles);
+  else if(k==='entr') b.innerHTML=tabEntrainement(_sante.cycles,_sante.workouts);
+  else if(k==='j30') b.innerHTML=tabJours30(_sante.cycles);
+}
+
+/* ---- barres horizontales (buckets → récup) ---- */
+function barRows(buckets){
+  const vis=buckets.filter(b=>b.n>=15);
+  const out=vis.map(b=>{
+    const w=b.mean!=null?Math.min(100,b.mean):0; const fr=b.n<30;
+    const col=b.mean>=67?'#22c55e':(b.mean>=50?'#f59e0b':'#f87171');
+    return `<div class="rel-row" title="${b.k} — ${b.mean!=null?Math.round(b.mean)+'%':'—'} (n=${b.n})"><span class="rl">${b.k}</span>
+      <div class="rtrack"><div class="rfill" style="width:${w}%;background:${col}"></div></div>
+      <span class="rv">${b.mean!=null?Math.round(b.mean)+'%':'—'}<span class="rn">n=${b.n}${fr?' ⚠':''}</span></span></div>`;
+  }).join('');
+  return out || '<div class="disclaimer">pas assez de données (n&lt;15).</div>';
+}
+
+/* ---- barres verticales (séries temporelles) ---- */
+function vbars(data, col, fmt){
+  if(!data.length) return '<div class="disclaimer">pas de données.</div>';
+  const W=680,H=160,padB=22,padT=8, n=data.length, gap=3, bw=(W-(n-1)*gap)/n;
+  const vmax=Math.max(...data.map(d=>d.v))||1;
+  const bars=data.map((d,i)=>{ const h=(d.v/vmax)*(H-padB-padT), x=i*(bw+gap), y=H-padB-h;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0,h).toFixed(1)}" fill="${col}" rx="2"><title>${d.label} : ${fmt(d.v)}</title></rect>`; }).join('');
+  const labs=data.map((d,i)=>{ const yr=d.label.slice(0,4), prev=i>0?data[i-1].label.slice(0,4):null;
+    if(yr!==prev){ const x=i*(bw+gap)+bw/2; return `<text x="${x.toFixed(1)}" y="${H-6}" fill="#8b919e" font-size="10" text-anchor="middle">${yr}</text>`; } return ''; }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="height:auto;display:block">${bars}${labs}</svg>`;
+}
+
+/* ---- onglet Tendances (sélecteur + moyenne glissante 6 mois + survol) ---- */
+const TREND_METRICS=[['recovery','Récupération (%)','#22c55e'],['hrv','HRV (ms)','#3b82f6'],['rhr','Pouls au repos (bpm)','#f59e0b'],['asleep_min','Sommeil (h)','#a78bfa'],['day_strain','Strain du jour','#ef4444']];
+function tabTendances(){
+  return `<div class="sante-sec"><h3>📈 Évolution sur 5 ans — moyenne par mois</h3>
+    <select id="trendSel" class="sante-select">${TREND_METRICS.map(([k,l])=>`<option value="${k}" ${k===_trendMetric?'selected':''}>${l}</option>`).join('')}</select>
+    <div id="trendChart"></div>
+    <div class="disclaimer">Trait fin = moyenne du mois · trait épais = moyenne glissante sur 6 mois. Survole un point pour la valeur exacte.</div>
   </div>`;
+}
+function wireTrendSelect(){ const s=document.getElementById('trendSel'); if(s) s.onchange=()=>{ _trendMetric=s.value; drawTrend(); }; drawTrend(); }
+function drawTrend(){
+  const el=document.getElementById('trendChart'); if(!el) return;
+  const meta=TREND_METRICS.find(x=>x[0]===_trendMetric), col=meta[2];
+  const byMonth={}; _sante.cycles.forEach(r=>{ const m=(r.day||'').slice(0,7); if(m)(byMonth[m]=byMonth[m]||[]).push(r); });
+  const months=Object.keys(byMonth).sort();
+  const vals=months.map(m=>{ let v=_mean(byMonth[m].map(r=>r[_trendMetric])); if(v!=null && _trendMetric==='asleep_min') v=v/60; return v; });
+  const roll=vals.map((_,i)=>{ const w=vals.slice(Math.max(0,i-5),i+1).filter(x=>x!=null); return w.length? w.reduce((s,x)=>s+x,0)/w.length : null; });
+  el.innerHTML = trendSVG(months, vals, roll, col, _trendMetric);
+}
+function trendSVG(months, vals, roll, col, metric){
+  const W=680,H=240,padL=34,padR=8,padT=10,padB=22;
+  const pts=vals.map((v,i)=>({i,v})).filter(p=>p.v!=null);
+  if(pts.length<2) return `<div class="disclaimer">pas assez de points.</div>`;
+  const all=vals.concat(roll).filter(x=>x!=null); let vmin=Math.min(...all), vmax=Math.max(...all);
+  const sp=(vmax-vmin)||1; vmin-=sp*0.08; vmax+=sp*0.08;
+  const N=months.length, xs=i=> padL+(N>1?i/(N-1):0)*(W-padL-padR), ys=v=> H-padB-((v-vmin)/(vmax-vmin))*(H-padT-padB);
+  const fv=v=> metric==='asleep_min'?v.toFixed(1):(metric==='hrv'||metric==='day_strain'?v.toFixed(1):Math.round(v));
+  const path=arr=>{ let d='',on=false; arr.forEach((v,i)=>{ if(v==null){on=false;return;} d+=(on?'L':'M')+xs(i).toFixed(1)+' '+ys(v).toFixed(1)+' '; on=true; }); return d; };
+  const dots=months.map((m,i)=> vals[i]==null?'':`<circle cx="${xs(i).toFixed(1)}" cy="${ys(vals[i]).toFixed(1)}" r="7" fill="transparent"><title>${m} : ${fv(vals[i])}</title></circle>`).join('');
+  const ticks=[vmax-(vmax-vmin)*0.12, (vmin+vmax)/2, vmin+(vmax-vmin)*0.12].map(t=>`<text x="2" y="${(ys(t)+3).toFixed(1)}" fill="#8b919e" font-size="10">${fv(t)}</text>`).join('');
+  const yr={}; months.forEach((m,i)=>{ const y=m.slice(0,4); if(!(y in yr)) yr[y]=i; });
+  const xlabs=Object.entries(yr).map(([y,i])=>`<text x="${xs(i).toFixed(1)}" y="${H-6}" fill="#8b919e" font-size="10" text-anchor="middle">${y}</text>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="height:auto;display:block">
+    ${ticks}${xlabs}
+    <path d="${path(vals)}" fill="none" stroke="#3a3f4a" stroke-width="1.3"/>
+    <path d="${path(roll)}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round"/>
+    ${dots}
+  </svg>`;
+}
 
-  host.innerHTML = `<div class="sante-sec"><h3>🗓️ 30 derniers jours</h3>${tiles}</div>` + trends + rel;
+/* ---- onglet Sommeil ---- */
+function tabSommeil(cyc){
+  const sleepB=_bucketMeans(cyc, r=>_bucketSleep(r.asleep_min), r=>r.recovery, ['<6h','6-7h','7-8h','8-8.5h','>8.5h']);
+  const ctrl=cyc.filter(r=>r.asleep_min!=null && r.asleep_min>=420 && r.asleep_min<=510);
+  const bedB=_bucketMeans(ctrl, r=>_bucketBed(r.onset_h), r=>r.recovery, ['av. 22h','22-23h','23h-0h','0h-1h','ap. 1h']);
+  return `<div class="sante-sec"><h3>😴 Plus tu dors, mieux tu récupères</h3><div class="rel-block">${barRows(sleepB)}</div></div>
+    <div class="sante-sec"><h3>🌙 À durée égale, l'heure d'endormissement compte</h3><div class="rel-block"><div class="disclaimer" style="margin:0 0 10px">Sur les seules nuits de 7h à 8h30.</div>${barRows(bedB)}</div></div>`;
+}
+
+/* ---- onglet Entraînement ---- */
+function tabEntrainement(cyc, wk){
+  const strB=_bucketMeans(cyc, r=>_bucketStrain(r.prev_strain), r=>r.recovery, ['<6','6-10','10-15','≥15']);
+  const ac={}; wk.forEach(w=>{ if(w.activity) ac[w.activity]=(ac[w.activity]||0)+1; });
+  const top=Object.entries(ac).sort((a,b)=>b[1]-a[1]).slice(0,8), amax=top.length?top[0][1]:1;
+  const acts=top.map(([a,n])=>`<div class="rel-row" title="${a} : ${n}"><span class="rl">${a}</span><div class="rtrack"><div class="rfill" style="width:${(n/amax*100).toFixed(0)}%;background:#3b82f6"></div></div><span class="rv">${n}</span></div>`).join('');
+  const q={}; wk.forEach(w=>{ if(!w.local_date)return; const y=w.local_date.slice(0,4), mo=+w.local_date.slice(5,7), qq=y+'·T'+(Math.floor((mo-1)/3)+1);
+    if(!q[qq]) q[qq]={vol:0,z45:0}; q[qq].vol+=(+w.duration_min||0); q[qq].z45+=((+w.z4||0)+(+w.z5||0))/100*(+w.duration_min||0); });
+  const qs=Object.keys(q).sort();
+  const volData=qs.map(k=>({label:k, v:q[k].vol/13})), zData=qs.map(k=>({label:k, v:q[k].z45/13}));
+  return `<div class="sante-sec"><h3>🏋️ La charge de la veille → récup</h3><div class="rel-block">${barRows(strB)}</div></div>
+    <div class="sante-sec"><h3>📊 Volume d'entraînement <span class="sub2">min/sem. par trimestre</span></h3>${vbars(volData,'#3b82f6',v=>Math.round(v)+' min')}</div>
+    <div class="sante-sec"><h3>🔥 Minutes en zones 4-5 <span class="sub2">min/sem. par trimestre</span></h3>${vbars(zData,'#f59e0b',v=>Math.round(v)+' min')}</div>
+    <div class="sante-sec"><h3>🏃 Activités les plus fréquentes</h3><div class="rel-block">${acts||'<div class="disclaimer">pas de données.</div>'}</div></div>`;
+}
+
+/* ---- onglet 30 derniers jours ---- */
+function tabJours30(cyc){
+  const last=cyc.slice(-30);
+  const col=r=> r.recovery>=67?'#22c55e':(r.recovery>=34?'#f59e0b':'#f87171');
+  const W=680,H=150,padB=18,padT=16, n=last.length, gap=3, bw=(W-(n-1)*gap)/n;
+  const bars=last.map((r,i)=>{ const v=r.recovery||0, h=(v/100)*(H-padB-padT), x=i*(bw+gap), y=H-padB-h;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0,h).toFixed(1)}" fill="${col(r)}" rx="2"><title>${r.day} : ${r.recovery!=null?r.recovery+'%':'—'}</title></rect>`; }).join('');
+  const chart=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="height:auto;display:block">${bars}</svg>`;
+  const rows=last.slice().reverse().map(r=>`<tr><td>${r.day}</td><td style="color:${col(r)};font-weight:700">${r.recovery==null?'—':r.recovery}</td><td>${r.hrv==null?'—':r.hrv}</td><td>${r.rhr==null?'—':r.rhr}</td><td>${r.asleep_min!=null?_hm(r.asleep_min/60):'—'}</td><td>${r.onset_h!=null?_hm(r.onset_h):'—'}</td><td>${r.day_strain==null?'—':r.day_strain}</td></tr>`).join('');
+  const table=`<div class="sante-table-wrap"><table class="sante-table"><thead><tr><th>Date</th><th>Récup</th><th>HRV</th><th>Pouls</th><th>Sommeil</th><th>Endormi</th><th>Strain</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="sante-sec"><h3>🗓️ Les 30 derniers jours</h3>${chart}${table}</div>`;
 }
 </script>
 
