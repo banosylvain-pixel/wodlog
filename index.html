@@ -316,6 +316,22 @@
   .tracker-row input{ width:15px; height:15px; accent-color:var(--accent2); }
   .plan-note{ font-size:0.78rem; color:var(--muted); line-height:1.55; }
   .plan-note b{ color:var(--text); }
+  .scale-rule{ font-size:0.8rem; line-height:1.5; display:grid; gap:6px; margin-bottom:14px; }
+  .scale-rule b{ color:var(--text); }
+  .scale-row{ display:grid; grid-template-columns:1fr 78px 78px; gap:8px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); font-size:0.83rem; }
+  .scale-row:last-child{ border-bottom:none; }
+  .scale-row.head{ font-size:0.68rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; padding-bottom:6px; }
+  .scale-row .sm{ color:var(--text); }
+  .scale-row .sv{ text-align:right; font-weight:700; }
+  .scale-row.head .sv{ font-weight:600; }
+  .scale-row .sv.muted{ color:var(--muted); font-weight:400; }
+  .note-card{ background:#0f1115; border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+  .note-head{ display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:8px; }
+  .note-head h4{ margin:0; font-size:0.9rem; color:var(--accent); }
+  .note-head span{ font-size:0.7rem; color:var(--muted); white-space:nowrap; }
+  .note-card ul{ margin:0; padding-left:18px; }
+  .note-card li{ font-size:0.83rem; line-height:1.55; margin-bottom:6px; }
+  .note-card li b{ color:var(--text); }
   .export-bar button.active{
     background:var(--accent); border-color:var(--accent); color:white;
   }
@@ -709,6 +725,19 @@
   </div>
 
   <div class="plan-sec">
+    <h3>⚖️ Quel poids charger ? <span style="font-size:0.72rem;color:var(--muted);font-weight:400;">— calculé sur tes maxes</span></h3>
+    <div class="sess-card">
+      <p class="plan-note" style="margin:0 0 12px;">Le label « Rx / intermédiaire » de la salle ne vaut rien <b>pour toi</b> — il est calé sur un athlète moyen plus fort. Charge en % de <b>ton</b> max. La règle :</p>
+      <div class="scale-rule">
+        <div><b>Beaucoup de reps à enchaîner</b> (séries de 5-10, plusieurs tours) → colonne <span style="color:var(--accent2)">À cycler</span>.</div>
+        <div><b>Peu de reps lourdes</b> (singles, doubles, pièce de force) → tu peux monter jusqu'au <span style="color:var(--warn)">Plafond</span>, voire au-delà.</div>
+      </div>
+      <div id="scaleTable"></div>
+      <p class="plan-note" style="margin-top:10px;">Au-dessus du <span style="color:var(--warn)">plafond</span> (~55 % de ton max), tu passes en singles et tu prends le mur. <b>Test express</b> avant le WOD : à froid, fais la plus grosse série prévue au poids envisagé — si ce n'est pas fluide, descends. <i>S2OH estimé depuis ton strict press.</i></p>
+    </div>
+  </div>
+
+  <div class="plan-sec">
     <h3>🏋️ Tes 2 séances</h3>
 
     <div class="sess-card">
@@ -730,6 +759,13 @@
         <li><b>Wall balls — power-endurance</b> : ballon <b>plus lourd</b> (10-12 kg), EMOM × 8-10 min × 7-10 reps/min, propre, sans redline.</li>
         <li><b>Gainage anti-rotation</b> : Pallof press 3×10/côté.</li>
       </ol>
+    </div>
+  </div>
+
+  <div class="plan-sec">
+    <h3>📝 Mes rappels perso <span style="font-size:0.72rem;color:var(--muted);font-weight:400;">— s'enrichit au fil des séances</span></h3>
+    <div class="sess-card">
+      <div id="coachNotes"></div>
     </div>
   </div>
 
@@ -4830,7 +4866,76 @@ function planWeeks(){
 function loadPlan(){ try{ return JSON.parse(localStorage.getItem('wodlog_plan_v1')) || {}; }catch(e){ return {}; } }
 function savePlan(p){ localStorage.setItem('wodlog_plan_v1', JSON.stringify(p)); }
 function togglePlan(mon, k, v){ const p = loadPlan(); (p[mon] = p[mon] || {})[k] = v; savePlan(p); renderPlanProgress(); }
-function initPlanView(){ renderPlanTracker(); }
+function initPlanView(){ renderPlanTracker(); renderScaling(); renderCoachNotes(); }
+
+const SCALE_MOVES = [
+  { label:"Clean / Power clean",       src:"cleanJerk",   mult:1,   cyc:0.42, ceil:0.55 },
+  { label:"Snatch / Power snatch",     src:"snatch",      mult:1,   cyc:0.42, ceil:0.55 },
+  { label:"Thruster",                  src:"frontSquat",  mult:1,   cyc:0.40, ceil:0.52 },
+  { label:"Front squat (WOD)",         src:"frontSquat",  mult:1,   cyc:0.45, ceil:0.58 },
+  { label:"Back squat (WOD)",          src:"backSquat",   mult:1,   cyc:0.45, ceil:0.58 },
+  { label:"Deadlift (WOD)",            src:"deadlift",    mult:1,   cyc:0.50, ceil:0.65 },
+  { label:"S2OH / Push press / Jerk",  src:"strictPress", mult:1.4, cyc:0.42, ceil:0.55 }
+];
+function round25(x){ return Math.round(x/2.5)*2.5; }
+function fmtKg(x){ return (Math.round(x*10)/10).toString().replace(/\.0$/,''); }
+function renderScaling(){
+  const host = document.getElementById('scaleTable');
+  if(!host) return;
+  let profile = {};
+  try{ profile = JSON.parse(localStorage.getItem('wodlog_strength_profile_v1')) || {}; }catch(e){}
+  const lifts = profile.lifts || {};
+  let anyMissing = false;
+  const rows = SCALE_MOVES.map(m => {
+    const base = parseFloat(lifts[m.src]);
+    if(!base || base <= 0){
+      anyMissing = true;
+      return `<div class="scale-row"><span class="sm">${m.label}</span><span class="sv muted">—</span><span class="sv muted">—</span></div>`;
+    }
+    const max = base * m.mult;
+    return `<div class="scale-row"><span class="sm">${m.label}</span><span class="sv" style="color:var(--accent2)">${fmtKg(round25(max*m.cyc))} kg</span><span class="sv" style="color:var(--warn)">${fmtKg(round25(max*m.ceil))} kg</span></div>`;
+  }).join("");
+  host.innerHTML = `<div class="scale-row head"><span class="sm"></span><span class="sv">À cycler</span><span class="sv">Plafond</span></div>` + rows;
+  if(anyMissing){
+    host.innerHTML += `<p class="plan-note" style="margin-top:8px;">Les « — » : renseigne le max manquant dans l'onglet <b>💪 Force &amp; Niveaux</b>, puis reviens ici.</p>`;
+  }
+}
+
+// Fiches techniques perso — la base ci-dessous est fixe, et toute note
+// ajoutée dans la clé synchronisée wodlog_coachnotes_v1 s'affiche à la suite.
+const COACH_FOUNDATION = [
+  { date:"19 nov", title:"Front Squat — la position", items:[
+    "Le poids repose sur l'<b>étagère des deltoïdes avant</b>, il n'est PAS tenu par les mains.",
+    "Juste <b>2-3 doigts</b> sous la barre, prise lâche. Serrer à pleines mains = tu tires la barre dans ta gorge dès que tu montes les coudes.",
+    "<b>Coudes hauts et légèrement vers l'extérieur</b>, en permanence. Mène la remontée avec les coudes.",
+    "Torse droit, grande respiration dans le ventre, gaine <b>avant</b> de descendre. Un contact barre/gorge est normal — respire avec.",
+    "Entraîne la position à charge <b>légère-modérée</b> jusqu'à ce qu'elle soit automatique, avant de charger lourd.",
+    "Mobilité, 2 min avant : étirement lats à l'élastique · poignets/triceps à genoux (doigts vers toi) · front rack holds 20-30 s."
+  ]},
+  { date:"19 nov", title:"Back Squat — la zone de contrôle", items:[
+    "Ton levier n'est pas le grind lourd et moche : c'est la <b>qualité à charge moyenne</b>.",
+    "Travaille <b>60-70 %</b> avec contrôle total : descente maîtrisée, position basse solide, remontée gainée.",
+    "Une rep moche à 70+ ne te fait pas progresser — elle t'apprend à mal bouger sous fatigue.",
+    "RPE 8 max, 1-2 reps en réserve. Mieux vaut <b>5 reps propres à 62</b> que 2 reps grind à 72.",
+    "Gainage : grande respi, bloque le tronc avant chaque rep. Si le gainage lâche, le poids est trop lourd <b>pour aujourd'hui</b> — descends."
+  ]},
+  { date:"19 nov", title:"Le principe (pour tout)", items:[
+    "<b>Qualité à charge moyenne &gt; charge lourde moche.</b> La force propre se transfère ; la force moche plafonne.",
+    "Sois « en conscience » sur chaque rep moyenne : c'est là que tu construis, pas sur les PR ratés.",
+    "Ton moteur est déjà au-dessus de la salle (1er en Rx sur le bodyweight). Le chantier, c'est la force propre sous charge — exactement ce que ces fiches travaillent."
+  ]}
+];
+function renderCoachNotes(){
+  const host = document.getElementById('coachNotes');
+  if(!host) return;
+  let extra = [];
+  try{ extra = JSON.parse(localStorage.getItem('wodlog_coachnotes_v1')) || []; }catch(e){}
+  const all = COACH_FOUNDATION.concat(Array.isArray(extra) ? extra : []);
+  host.innerHTML = all.map(n => `<div class="note-card">
+    <div class="note-head"><h4>${n.title||''}</h4><span>${n.date||''}</span></div>
+    <ul>${(n.items||[]).map(i => `<li>${i}</li>`).join('')}</ul>
+  </div>`).join("");
+}
 function renderPlanTracker(){
   const host = document.getElementById('planTracker');
   if(!host) return;
@@ -6157,7 +6262,7 @@ if ('serviceWorker' in navigator) {
   const SUPA_URL = 'https://jzrmnnrynqqcxjzxykow.supabase.co';
   const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6cm1ubnJ5bnFxY3hqenh5a293Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NzMyMzIsImV4cCI6MjA5ODA0OTIzMn0.aiVS1C4psqmWu2Nu68b0VWnALfN5VkdOoWBnWUuJGXQ';
   const EMAIL = 'wodlog@sylvain.app';
-  const KEYS = ['wodlog_scores_v1','wodlog_strength_profile_v1','wodlog_history_v1','wodlog_rehab_v1','wodlog_plan_v1'];
+  const KEYS = ['wodlog_scores_v1','wodlog_strength_profile_v1','wodlog_history_v1','wodlog_rehab_v1','wodlog_plan_v1','wodlog_coachnotes_v1'];
 
   const st = document.createElement('style');
   st.textContent = `
