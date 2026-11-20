@@ -376,6 +376,12 @@
   #trendOverlay{ cursor:crosshair; }
   #santeTip{ position:fixed; z-index:1500; pointer-events:none; background:#171a21; border:1px solid var(--border); border-radius:8px; padding:7px 10px; font-size:0.76rem; color:var(--text); line-height:1.45; display:none; box-shadow:0 4px 14px rgba(0,0,0,.45); max-width:220px; }
   #santeTip b{ color:#fff; }
+  .divrow{ display:grid; grid-template-columns:150px 1fr 54px; gap:8px; align-items:center; font-size:0.78rem; padding:3px 0; }
+  .divrow .divlbl{ color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .divbar{ position:relative; height:15px; }
+  .divbar::before{ content:''; position:absolute; left:50%; top:-2px; bottom:-2px; width:1px; background:var(--border); }
+  .divfill{ position:absolute; top:1px; bottom:1px; border-radius:3px; }
+  .divrow .divval{ text-align:right; font-weight:700; }
   .export-bar button.active{
     background:var(--accent); border-color:var(--accent); color:white;
   }
@@ -6343,7 +6349,11 @@ async function initSanteView(){
   const cycles = await _pageAll(sb,'v_day','day,recovery,rhr,hrv,day_strain,asleep_min,onset_h,prev_strain','day');
   const workouts = await _pageAll(sb,'whoop_workouts','local_date,duration_min,activity,strain,z4,z5','local_date');
   if(!cycles.length){ host.innerHTML = santeMsg("Aucune donnée Whoop dans ta base pour l'instant."); return; }
-  _sante = { cycles, workouts };
+  const flagged = await _pageAll(sb,'v_hr_flagged','wake_date,recovery,excess,next_recovery','cycle_start');
+  let journalGap=[], creuser=[];
+  try{ journalGap=((await sb.from('v_journal_gap').select('*').limit(400)).data)||[]; }catch(e){}
+  try{ creuser=((await sb.from('v_creuser_journal').select('*').limit(400)).data)||[]; }catch(e){}
+  _sante = { cycles, workouts, flagged, journalGap, creuser };
   renderSanteShell(host);
 }
 function _mean(a){ a = a.filter(x => x!=null && !isNaN(x)).map(Number); return a.length ? a.reduce((s,x)=>s+x,0)/a.length : null; }
@@ -6407,11 +6417,12 @@ function renderSanteCards(cyc){
   </div>`;
 }
 
-const SANTE_TABS=[['tend','Tendances'],['sommeil','Sommeil'],['entr','Entraînement'],['j30','30 jours']];
+const SANTE_TABS=[['tend','Tendances'],['sommeil','Sommeil'],['entr','Entraînement'],['fc','FC du jour'],['creuser','Jours à creuser'],['journal','Journal'],['j30','30 jours']];
 function renderSanteShell(host){
   host.innerHTML = renderSanteCards(_sante.cycles)
     + `<div class="sante-subnav">${SANTE_TABS.map(([k,l])=>`<button class="stab" data-k="${k}" onclick="santeTab('${k}')">${l}</button>`).join('')}</div>`
     + `<div id="santeTabBody"></div>`;
+  wireSanteHover();
   santeTab(_santeTab);
 }
 function santeTab(k){
@@ -6421,7 +6432,24 @@ function santeTab(k){
   if(k==='tend'){ b.innerHTML=tabTendances(); wireTrendSelect(); }
   else if(k==='sommeil') b.innerHTML=tabSommeil(_sante.cycles);
   else if(k==='entr') b.innerHTML=tabEntrainement(_sante.cycles,_sante.workouts);
+  else if(k==='fc') b.innerHTML=tabFC(_sante.flagged);
+  else if(k==='creuser') b.innerHTML=tabCreuser(_sante.creuser);
+  else if(k==='journal') b.innerHTML=tabJournal(_sante.journalGap);
   else if(k==='j30') b.innerHTML=tabJours30(_sante.cycles);
+}
+let _hoverWired=false;
+function wireSanteHover(){
+  if(_hoverWired) return; _hoverWired=true;
+  const panel=document.getElementById('santePanel'); if(!panel) return;
+  const tip=_santeTip();
+  function show(cx,cy,el){ tip.innerHTML=el.getAttribute('data-tip'); tip.style.display='block'; tip.style.left=Math.min(cx+14, window.innerWidth-200)+'px'; tip.style.top=(cy+14)+'px'; }
+  panel.addEventListener('mousemove', e=>{
+    if(e.target.closest && e.target.closest('#trendChart')) return;
+    const el=e.target.closest && e.target.closest('[data-tip]');
+    if(el) show(e.clientX,e.clientY,el); else tip.style.display='none';
+  });
+  panel.addEventListener('mouseleave', ()=>{ tip.style.display='none'; });
+  panel.addEventListener('touchmove', e=>{ const t=e.touches[0]; if(!t)return; const u=document.elementFromPoint(t.clientX,t.clientY); const el=u&&u.closest&&u.closest('[data-tip]'); if(el && !(u.closest('#trendChart'))) show(t.clientX,t.clientY,el); }, {passive:true});
 }
 
 /* ---- barres horizontales (buckets → récup) ---- */
@@ -6430,7 +6458,7 @@ function barRows(buckets){
   const out=vis.map(b=>{
     const w=b.mean!=null?Math.min(100,b.mean):0; const fr=b.n<30;
     const col=b.mean>=67?'#22c55e':(b.mean>=50?'#f59e0b':'#f87171');
-    return `<div class="rel-row" title="${b.k} — ${b.mean!=null?Math.round(b.mean)+'%':'—'} (n=${b.n})"><span class="rl">${b.k}</span>
+    return `<div class="rel-row" data-tip="${b.k} — ${b.mean!=null?Math.round(b.mean)+'%':'—'} récup (n=${b.n})"><span class="rl">${b.k}</span>
       <div class="rtrack"><div class="rfill" style="width:${w}%;background:${col}"></div></div>
       <span class="rv">${b.mean!=null?Math.round(b.mean)+'%':'—'}<span class="rn">n=${b.n}${fr?' ⚠':''}</span></span></div>`;
   }).join('');
@@ -6443,7 +6471,7 @@ function vbars(data, col, fmt){
   const W=680,H=160,padB=22,padT=8, n=data.length, gap=3, bw=(W-(n-1)*gap)/n;
   const vmax=Math.max(...data.map(d=>d.v))||1;
   const bars=data.map((d,i)=>{ const h=(d.v/vmax)*(H-padB-padT), x=i*(bw+gap), y=H-padB-h;
-    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0,h).toFixed(1)}" fill="${col}" rx="2"><title>${d.label} : ${fmt(d.v)}</title></rect>`; }).join('');
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0,h).toFixed(1)}" fill="${col}" rx="2" data-tip="${d.label} : ${fmt(d.v)}"/>`; }).join('');
   const labs=data.map((d,i)=>{ const yr=d.label.slice(0,4), prev=i>0?data[i-1].label.slice(0,4):null;
     if(yr!==prev){ const x=i*(bw+gap)+bw/2; return `<text x="${x.toFixed(1)}" y="${H-6}" fill="#8b919e" font-size="10" text-anchor="middle">${yr}</text>`; } return ''; }).join('');
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="height:auto;display:block">${bars}${labs}</svg>`;
@@ -6540,7 +6568,7 @@ function tabEntrainement(cyc, wk){
   const strB=_bucketMeans(cyc, r=>_bucketStrain(r.prev_strain), r=>r.recovery, ['<6','6-10','10-15','≥15']);
   const ac={}; wk.forEach(w=>{ if(w.activity) ac[w.activity]=(ac[w.activity]||0)+1; });
   const top=Object.entries(ac).sort((a,b)=>b[1]-a[1]).slice(0,8), amax=top.length?top[0][1]:1;
-  const acts=top.map(([a,n])=>`<div class="rel-row" title="${a} : ${n}"><span class="rl">${a}</span><div class="rtrack"><div class="rfill" style="width:${(n/amax*100).toFixed(0)}%;background:#3b82f6"></div></div><span class="rv">${n}</span></div>`).join('');
+  const acts=top.map(([a,n])=>`<div class="rel-row" data-tip="${a} : ${n} séances"><span class="rl">${a}</span><div class="rtrack"><div class="rfill" style="width:${(n/amax*100).toFixed(0)}%;background:#3b82f6"></div></div><span class="rv">${n}</span></div>`).join('');
   const q={}; wk.forEach(w=>{ if(!w.local_date)return; const y=w.local_date.slice(0,4), mo=+w.local_date.slice(5,7), qq=y+'·T'+(Math.floor((mo-1)/3)+1);
     if(!q[qq]) q[qq]={vol:0,z45:0}; q[qq].vol+=(+w.duration_min||0); q[qq].z45+=((+w.z4||0)+(+w.z5||0))/100*(+w.duration_min||0); });
   const qs=Object.keys(q).sort();
@@ -6557,11 +6585,70 @@ function tabJours30(cyc){
   const col=r=> r.recovery>=67?'#22c55e':(r.recovery>=34?'#f59e0b':'#f87171');
   const W=680,H=150,padB=18,padT=16, n=last.length, gap=3, bw=(W-(n-1)*gap)/n;
   const bars=last.map((r,i)=>{ const v=r.recovery||0, h=(v/100)*(H-padB-padT), x=i*(bw+gap), y=H-padB-h;
-    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0,h).toFixed(1)}" fill="${col(r)}" rx="2"><title>${r.day} : ${r.recovery!=null?r.recovery+'%':'—'}</title></rect>`; }).join('');
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0,h).toFixed(1)}" fill="${col(r)}" rx="2" data-tip="${r.day} : ${r.recovery!=null?r.recovery+'% récup':'—'}"/>`; }).join('');
   const chart=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="height:auto;display:block">${bars}</svg>`;
   const rows=last.slice().reverse().map(r=>`<tr><td>${r.day}</td><td style="color:${col(r)};font-weight:700">${r.recovery==null?'—':r.recovery}</td><td>${r.hrv==null?'—':r.hrv}</td><td>${r.rhr==null?'—':r.rhr}</td><td>${r.asleep_min!=null?_hm(r.asleep_min/60):'—'}</td><td>${r.onset_h!=null?_hm(r.onset_h):'—'}</td><td>${r.day_strain==null?'—':r.day_strain}</td></tr>`).join('');
   const table=`<div class="sante-table-wrap"><table class="sante-table"><thead><tr><th>Date</th><th>Récup</th><th>HRV</th><th>Pouls</th><th>Sommeil</th><th>Endormi</th><th>Strain</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   return `<div class="sante-sec"><h3>🗓️ Les 30 derniers jours</h3>${chart}${table}</div>`;
+}
+
+/* ---- traduction FR des questions du journal ---- */
+function _jlabel(q){
+  if(!q) return '';
+  const s=q.toLowerCase();
+  const map=[['alcohol','Alcool'],['bad mood','Moral bas'],['screen','Écran au lit'],['gratitude','Gratitude'],['irritable','Irritable'],['stress','Stress'],['magnesium','Magnésium'],['intermittent fasting','Jeûne intermittent'],['anxious','Anxieux'],['electrolyte','Électrolytes'],['earplug','Bouchons d\'oreilles'],['fish oil','Oméga-3'],['omega','Oméga-3'],['tobacco','Tabac'],['family','Lien famille/amis'],['hydrat','Bien hydraté'],['sunlight','Soleil au réveil'],['sexual','Activité sexuelle'],['late meal','Repas tardif'],['within 3 hours','Repas tardif'],['pet','Animal dans la chambre'],['creatine','Créatine'],['emotionally stable','Stable émotionnellement'],['massage','Massage'],['zone 2','Cardio zone 2'],['low-intensity','Cardio zone 2'],['caffeine','Caféine'],['processed food','Évité aliments transformés'],['fruits','Fruits/légumes'],['resources/skills','Ressources/énergie OK'],['breathwork','Respiration'],['dairy-free','Sans laitages'],['chicken','Volaille'],['same bed','Lit habituel'],['shared bed','Lit partagé'],['single','Célibataire'],['protein','Protéines'],['meditat','Méditation'],['nap','Sieste'],['vaccin','Vaccin'],['covid','COVID'],['sick','Malade'],['travel','Voyage'],['sauna','Sauna'],['cold','Bain froid'],['stretch','Étirements']];
+  for(const [k,v] of map){ if(s.includes(k)) return v; }
+  return q.replace(/\?$/,'');
+}
+function divBars(items, fmt){
+  const M=Math.max(1,...items.map(i=>Math.abs(i.val)));
+  return items.map(i=>{ const w=(Math.abs(i.val)/M*50).toFixed(1); const pos=i.val>=0;
+    const col=Math.abs(i.val)<3?'#8b919e':(i.val>0?'#22c55e':'#ef4444');
+    const style=pos?`left:50%;width:${w}%`:`right:50%;width:${w}%`;
+    return `<div class="divrow" data-tip="${i.label} : ${fmt(i.val)} pts de récup (n=${i.n})"><span class="divlbl">${i.label}</span><div class="divbar"><div class="divfill" style="${style};background:${col}"></div></div><span class="divval" style="color:${col}">${fmt(i.val)}</span></div>`;
+  }).join('');
+}
+
+/* ---- onglet Journal ---- */
+function tabJournal(gap){
+  const items=(gap||[]).map(g=>({q:g.question, ry:Number(g.rec_yes), rn:Number(g.rec_no), ny:Number(g.n_yes), nn:Number(g.n_no)}))
+    .filter(g=>g.ny>=30 && g.nn>=30 && !isNaN(g.ry) && !isNaN(g.rn))
+    .map(g=>({label:_jlabel(g.q), val:g.ry-g.rn, n:g.ny}))
+    .sort((a,b)=>b.val-a.val);
+  if(!items.length) return santeMsg("Journal pas encore chargé (ou pas assez de données). Lance les 5 fichiers journal_x_sur_5.sql dans Supabase, puis recharge.");
+  return `<div class="sante-sec"><h3>📖 Ce qui va avec ta récup, selon ton journal</h3>
+    <div class="disclaimer" style="margin-bottom:12px">Écart de récup entre les jours « oui » et « non » (questions avec ≥30 oui et ≥30 non). Associations, pas causes ; sous 3 points = bruit (gris).</div>
+    <div class="rel-block">${divBars(items, v=>(v>0?'+':'')+v.toFixed(1))}</div></div>`;
+}
+
+/* ---- onglet FC du jour ---- */
+function tabFC(flagged){
+  const yr={};
+  (flagged||[]).forEach(r=>{ const ex=Number(r.excess); if(isNaN(ex))return; const y=(r.wake_date||'').slice(0,4); if(!y)return; if(!yr[y])yr[y]={flg:0,rf:[],ro:[]}; const f=ex>2.5; if(f)yr[y].flg++; const nr=Number(r.next_recovery); if(!isNaN(nr))(f?yr[y].rf:yr[y].ro).push(nr); });
+  const years=Object.keys(yr).sort();
+  const rows=years.map(y=>{ const o=yr[y], rf=_mean(o.rf), ro=_mean(o.ro);
+    return `<tr data-tip="${y} — ${o.flg} jours retenus ; récup J+1 ${rf!=null?Math.round(rf)+'%':'—'} vs ${ro!=null?Math.round(ro)+'%':'—'}"><td>${y}</td><td>${o.flg}</td><td>${rf!=null?Math.round(rf)+'%':'—'}</td><td>${ro!=null?Math.round(ro)+'%':'—'}</td></tr>`; }).join('');
+  const tot=(flagged||[]).filter(r=>!isNaN(Number(r.excess)));
+  const tf=tot.filter(r=>Number(r.excess)>2.5), to=tot.filter(r=>Number(r.excess)<=2.5);
+  const rf=_mean(tf.map(r=>Number(r.next_recovery)).filter(x=>!isNaN(x))), ro=_mean(to.map(r=>Number(r.next_recovery)).filter(x=>!isNaN(x)));
+  return `<div class="sante-sec"><h3>❤️ FC du jour — l'excédent inexpliqué</h3>
+    <div class="disclaimer" style="margin-bottom:12px">Un jour est « retenu » quand ta FC moyenne dépasse d'au moins <b>2,5 bpm</b> ce qu'expliquent ton pouls au repos et ton strain (≈ 1 jour sur 7). Ces jours-là annoncent une moins bonne récup <b>le lendemain</b> (J+1).</div>
+    <div class="sante-table-wrap"><table class="sante-table"><thead><tr><th>Année</th><th>Jours retenus</th><th>Récup J+1 retenus</th><th>Récup J+1 autres</th></tr></thead>
+      <tbody>${rows}<tr style="font-weight:700"><td>Total</td><td>${tf.length}</td><td>${rf!=null?Math.round(rf)+'%':'—'}</td><td>${ro!=null?Math.round(ro)+'%':'—'}</td></tr></tbody></table></div></div>`;
+}
+
+/* ---- onglet Jours à creuser ---- */
+function tabCreuser(creuser){
+  const items=(creuser||[]).map(c=>({q:c.question, yf:Number(c.yes_flagged), yo:Number(c.yes_other), n:Number(c.n_flagged)}))
+    .filter(c=>c.n>=15 && !isNaN(c.yf) && !isNaN(c.yo))
+    .map(c=>({label:_jlabel(c.q), gap:c.yf-c.yo, yf:c.yf, yo:c.yo, n:c.n}))
+    .sort((a,b)=>b.gap-a.gap);
+  if(!items.length) return santeMsg("Pas assez de données journal sur les jours retenus. Charge les 5 fichiers journal, puis recharge.");
+  const rows=items.map(i=>{ const col=Math.abs(i.gap)<3?'#8b919e':(i.gap>0?'#ef4444':'#22c55e');
+    return `<tr data-tip="${i.label} : ${i.yf.toFixed(0)}% les jours retenus vs ${i.yo.toFixed(0)}% les autres (n=${i.n})"><td>${i.label}</td><td>${i.yf.toFixed(0)}%</td><td>${i.yo.toFixed(0)}%</td><td style="color:${col};font-weight:700">${i.gap>0?'+':''}${i.gap.toFixed(1)}</td></tr>`; }).join('');
+  return `<div class="sante-sec"><h3>🔎 Ce que disait ton journal les jours « retenus »</h3>
+    <div class="disclaimer" style="margin-bottom:12px">Part de « oui » les jours à FC excédentaire vs les autres jours. Un écart <b>positif</b> (rouge) = tu réponds plus souvent « oui » ces jours-là.</div>
+    <div class="sante-table-wrap"><table class="sante-table"><thead><tr><th>Question</th><th>Jours retenus</th><th>Autres</th><th>Écart (pts)</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
 }
 </script>
 
