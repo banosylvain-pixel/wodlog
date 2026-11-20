@@ -382,6 +382,9 @@
   .divbar::before{ content:''; position:absolute; left:50%; top:-2px; bottom:-2px; width:1px; background:var(--border); }
   .divfill{ position:absolute; top:1px; bottom:1px; border-radius:3px; }
   .divrow .divval{ text-align:right; font-weight:700; }
+  .trend-controls{ display:flex; gap:8px; flex-wrap:wrap; }
+  .trend-legend{ display:flex; gap:16px; font-size:0.74rem; color:var(--muted); margin:4px 0 8px; }
+  .trend-legend i{ display:inline-block; width:12px; height:3px; border-radius:2px; margin-right:5px; vertical-align:middle; }
   .export-bar button.active{
     background:var(--accent); border-color:var(--accent); color:white;
   }
@@ -6324,7 +6327,7 @@ if ('serviceWorker' in navigator) {
    SANTÉ — lecture des données Whoop depuis Supabase (vue v_day)
    ============================================================ */
 function santeMsg(t){ return `<div class="sante-msg">${t}</div>`; }
-let _sante = null, _santeTab = 'tend', _trendMetric = 'recovery';
+let _sante = null, _santeTab = 'tend', _trendMetric = 'recovery', _trendOverlay = '';
 async function _pageAll(sb, table, cols, orderCol){
   let all=[], from=0; const P=1000;
   while(true){
@@ -6481,14 +6484,22 @@ function vbars(data, col, fmt){
 const TREND_METRICS=[['recovery','Récupération (%)','#22c55e'],['hrv','HRV (ms)','#3b82f6'],['rhr','Pouls au repos (bpm)','#f59e0b'],['asleep_min','Sommeil (h)','#a78bfa'],['onset_h','Endormissement','#e879f9'],['day_strain','Strain du jour','#ef4444']];
 function tabTendances(){
   return `<div class="sante-sec"><h3>📈 Évolution sur 5 ans — moyenne par mois</h3>
-    <select id="trendSel" class="sante-select">${TREND_METRICS.map(([k,l])=>`<option value="${k}" ${k===_trendMetric?'selected':''}>${l}</option>`).join('')}</select>
+    <div class="trend-controls">
+      <select id="trendSel" class="sante-select">${TREND_METRICS.map(([k,l])=>`<option value="${k}" ${k===_trendMetric?'selected':''}>${l}</option>`).join('')}</select>
+      <select id="trendOverlaySel" class="sante-select"><option value="">Superposer…</option>${TREND_METRICS.map(([k,l])=>`<option value="${k}" ${k===_trendOverlay?'selected':''}>${l}</option>`).join('')}</select>
+    </div>
+    <div id="trendLegend" class="trend-legend"></div>
     <div id="trendChart"></div>
-    <div class="disclaimer">Trait fin = moyenne du mois · trait épais = moyenne glissante sur 6 mois. Survole un point pour la valeur exacte.</div>
+    <div class="disclaimer">Trait fin = moyenne du mois · trait épais = moyenne glissante 6 mois. Superpose une 2ᵉ métrique (chacune à son échelle). Survole pour les valeurs.</div>
   </div>`;
 }
-function wireTrendSelect(){ const s=document.getElementById('trendSel'); if(s) s.onchange=()=>{ _trendMetric=s.value; drawTrend(); }; drawTrend(); }
+function wireTrendSelect(){
+  const s=document.getElementById('trendSel'); if(s) s.onchange=()=>{ _trendMetric=s.value; drawTrend(); };
+  const o=document.getElementById('trendOverlaySel'); if(o) o.onchange=()=>{ _trendOverlay=o.value; drawTrend(); };
+  drawTrend();
+}
 let _trendState=null;
-function _tfv(v){ if(v==null)return '—'; const m=_trendState?_trendState.metric:_trendMetric;
+function _tfv(v, m){ if(v==null)return '—'; m=m||(_trendState?_trendState.metric:_trendMetric);
   if(m==='onset_h') return _hm(v);
   if(m==='asleep_min') return v.toFixed(1)+' h';
   if(m==='recovery') return Math.round(v)+' %';
@@ -6499,17 +6510,28 @@ function drawTrend(){
   const col=(TREND_METRICS.find(x=>x[0]===_trendMetric)||[])[2]||'#3b82f6';
   const byMonth={}; _sante.cycles.forEach(r=>{ const m=(r.day||'').slice(0,7); if(m)(byMonth[m]=byMonth[m]||[]).push(r); });
   const months=Object.keys(byMonth).sort();
-  const vals=months.map(m=>{ let v=_mean(byMonth[m].map(r=>r[_trendMetric])); if(v!=null && _trendMetric==='asleep_min') v=v/60; return v; });
-  const roll=vals.map((_,i)=>{ const w=vals.slice(Math.max(0,i-5),i+1).filter(x=>x!=null); return w.length? w.reduce((s,x)=>s+x,0)/w.length : null; });
+  const series=(metric)=>{ const vals=months.map(m=>{ let v=_mean(byMonth[m].map(r=>r[metric])); if(v!=null && metric==='asleep_min') v=v/60; return v; });
+    const roll=vals.map((_,i)=>{ const w=vals.slice(Math.max(0,i-5),i+1).filter(x=>x!=null); return w.length? w.reduce((s,x)=>s+x,0)/w.length : null; }); return {vals,roll}; };
+  const prim=series(_trendMetric);
   const W=680,H=240,padL=40,padR=8,padT=10,padB=22;
-  const all=vals.concat(roll).filter(x=>x!=null);
+  const all=prim.vals.concat(prim.roll).filter(x=>x!=null);
   if(all.length<2){ el.innerHTML='<div class="disclaimer">pas assez de points.</div>'; _trendState=null; return; }
   let vmin=Math.min(...all), vmax=Math.max(...all); const sp=(vmax-vmin)||1; vmin-=sp*0.08; vmax+=sp*0.08;
   const N=months.length;
   const xs=i=> padL+(N>1?i/(N-1):0)*(W-padL-padR);
   const ys=v=> H-padB-((v-vmin)/(vmax-vmin))*(H-padT-padB);
-  _trendState={months,vals,roll,col,xs,ys,W,H,padT,padB,vmin,vmax,N,metric:_trendMetric};
+  let ov=null;
+  if(_trendOverlay && _trendOverlay!==_trendMetric){
+    const o=series(_trendOverlay); const oall=o.roll.filter(x=>x!=null);
+    if(oall.length>=2){ let omin=Math.min(...oall), omax=Math.max(...oall); const os=(omax-omin)||1; omin-=os*0.08; omax+=os*0.08;
+      const ys2=v=> H-padB-((v-omin)/(omax-omin))*(H-padT-padB);
+      ov={metric:_trendOverlay, roll:o.roll, ys2, col:(TREND_METRICS.find(x=>x[0]===_trendOverlay)||[])[2]||'#f59e0b'}; }
+  }
+  _trendState={months,vals:prim.vals,roll:prim.roll,col,xs,ys,W,H,padT,padB,vmin,vmax,N,metric:_trendMetric,ov};
   el.innerHTML=trendSVG();
+  const lg=document.getElementById('trendLegend');
+  if(lg){ const nm=k=>(TREND_METRICS.find(t=>t[0]===k)||['','',''])[1];
+    lg.innerHTML=`<span><i style="background:${col}"></i>${nm(_trendMetric)}</span>`+(ov?`<span><i style="background:${ov.col}"></i>${nm(ov.metric)}</span>`:''); }
   wireTrendHover();
 }
 function trendSVG(){
@@ -6522,6 +6544,7 @@ function trendSVG(){
     ${ticks}${xlabs}
     <path d="${path(vals)}" fill="none" stroke="#3a3f4a" stroke-width="1.3"/>
     <path d="${path(roll)}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round"/>
+    ${S.ov?`<path d="${(()=>{let d='',on=false; S.ov.roll.forEach((v,i)=>{ if(v==null){on=false;return;} d+=(on?'L':'M')+xs(i).toFixed(1)+' '+S.ov.ys2(v).toFixed(1)+' '; on=true; }); return d;})()}" fill="none" stroke="${S.ov.col}" stroke-width="2.2" stroke-dasharray="5 3" stroke-linejoin="round"/>`:''}
     <line id="trendCross" x1="0" y1="${padT}" x2="0" y2="${H-padB}" stroke="#8b919e" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>
     <circle id="trendMk" r="4" fill="${col}" style="display:none"/>
     <rect id="trendOverlay" x="0" y="0" width="${W}" height="${H}" fill="transparent"/>
@@ -6542,7 +6565,9 @@ function wireTrendHover(){
     cross.setAttribute('x1',x); cross.setAttribute('x2',x); cross.style.display='';
     mk.setAttribute('cx',x); mk.setAttribute('cy',y); mk.style.display='';
     const lbl=(TREND_METRICS.find(t=>t[0]===S.metric)||['','valeur'])[1];
-    tip.innerHTML=`<b>${S.months[best]}</b><br>${lbl} : <b>${_tfv(S.vals[best])}</b>`+(S.roll[best]!=null?`<br><span style="color:${S.col}">gliss. 6 m : ${_tfv(S.roll[best])}</span>`:'');
+    let html=`<b>${S.months[best]}</b><br><span style="color:${S.col}">${lbl} : <b>${_tfv(S.vals[best])}</b></span>`+(S.roll[best]!=null?` <span style="color:var(--muted)">(gliss. ${_tfv(S.roll[best])})</span>`:'');
+    if(S.ov && S.ov.roll[best]!=null){ const ol=(TREND_METRICS.find(t=>t[0]===S.ov.metric)||['','?'])[1]; html+=`<br><span style="color:${S.ov.col}">${ol} : <b>${_tfv(S.ov.roll[best], S.ov.metric)}</b></span>`; }
+    tip.innerHTML=html;
     tip.style.display='block';
     tip.style.left=Math.min(cx+14, window.innerWidth-180)+'px';
     tip.style.top=(cy+14)+'px';
