@@ -332,6 +332,28 @@
   .note-card ul{ margin:0; padding-left:18px; }
   .note-card li{ font-size:0.83rem; line-height:1.55; margin-bottom:6px; }
   .note-card li b{ color:var(--text); }
+  /* ---- Santé (Whoop) ---- */
+  #santePanel{ display:none; max-width:880px; margin:0 auto; }
+  .sante-msg{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:22px; text-align:center; color:var(--muted); font-size:0.88rem; margin-top:16px; line-height:1.5; }
+  .sante-sec{ margin-top:22px; }
+  .sante-sec > h3{ font-size:1rem; margin:0 0 12px; }
+  .sante-tiles{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+  @media(max-width:600px){ .sante-tiles{ grid-template-columns:repeat(2,1fr); } }
+  .sante-tile{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px; text-align:center; }
+  .sante-tile .st-v{ font-size:1.3rem; font-weight:800; }
+  .sante-tile .st-l{ font-size:0.72rem; color:var(--muted); margin-top:4px; }
+  .line-card{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:12px; }
+  .line-card .lc-t{ font-size:0.82rem; color:var(--text); margin-bottom:6px; }
+  .line-card .lc-last{ font-weight:800; margin-left:6px; }
+  .line-card .lc-ax{ display:flex; justify-content:space-between; font-size:0.68rem; color:var(--muted); margin-top:2px; }
+  .rel-block{ background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+  .rel-block h4{ margin:0 0 10px; font-size:0.85rem; color:var(--accent); }
+  .rel-row{ display:grid; grid-template-columns:90px 1fr 74px; gap:10px; align-items:center; padding:6px 0; font-size:0.82rem; }
+  .rel-row .rl{ color:var(--muted); }
+  .rel-row .rtrack{ position:relative; height:15px; background:#0f1115; border:1px solid var(--border); border-radius:5px; overflow:hidden; }
+  .rel-row .rfill{ position:absolute; left:0; top:0; bottom:0; }
+  .rel-row .rv{ text-align:right; font-weight:700; }
+  .rel-row .rv .rn{ color:var(--muted); font-weight:400; font-size:0.7rem; margin-left:4px; }
   .export-bar button.active{
     background:var(--accent); border-color:var(--accent); color:white;
   }
@@ -442,6 +464,7 @@
   <button onclick="showView('rehab')" id="btnViewRehab">🩹 Rehab</button>
   <button onclick="showView('search')" id="btnViewSearch">🔍 Par mouvement</button>
   <button onclick="showView('plan')" id="btnViewPlan">🎯 Plan Open 2026</button>
+  <button onclick="showView('sante')" id="btnViewSante">🫀 Santé</button>
 </div>
 
 <div class="nav-bar">
@@ -879,6 +902,14 @@
     </div>
   </div>
 
+</div>
+
+<div id="santePanel">
+  <div class="plan-hero" style="background:linear-gradient(135deg,#3a1a2a,#171a21);">
+    <h2>🫀 Santé — 5 ans de Whoop</h2>
+    <p>Lu en direct depuis ta base : récupération, HRV, pouls au repos, sommeil, et ce qui les fait bouger. Le croisement avec tes WOD viendra dans un onglet à part, quand tes séances se seront accumulées.</p>
+  </div>
+  <div id="santeBody"></div>
 </div>
 
 <div id="app"></div>
@@ -4813,6 +4844,8 @@ function showView(view){
   const btnSearch = document.getElementById("btnViewSearch");
   const planPanel = document.getElementById("planPanel");
   const btnPlan = document.getElementById("btnViewPlan");
+  const santePanel = document.getElementById("santePanel");
+  const btnSante = document.getElementById("btnViewSante");
 
   app.style.display = "none";
   navBar.style.display = "none";
@@ -4821,7 +4854,8 @@ function showView(view){
   rehabPanel.style.display = "none";
   if(searchPanel) searchPanel.style.display = "none";
   if(planPanel) planPanel.style.display = "none";
-  [btnCal, btnStr, btnHist, btnReh, btnSearch, btnPlan].forEach(b => { if(b) b.classList.remove("active"); });
+  if(santePanel) santePanel.style.display = "none";
+  [btnCal, btnStr, btnHist, btnReh, btnSearch, btnPlan, btnSante].forEach(b => { if(b) b.classList.remove("active"); });
 
   if(view === "calendar"){
     app.style.display = "block";
@@ -4848,6 +4882,10 @@ function showView(view){
     planPanel.style.display = "block";
     btnPlan.classList.add("active");
     initPlanView();
+  } else if(view === "sante"){
+    santePanel.style.display = "block";
+    btnSante.classList.add("active");
+    initSanteView();
   }
 }
 
@@ -6253,6 +6291,98 @@ if ('serviceWorker' in navigator) {
 }
 </script>
 
+<script>
+/* ============================================================
+   SANTÉ — lecture des données Whoop depuis Supabase (vue v_day)
+   ============================================================ */
+function santeMsg(t){ return `<div class="sante-msg">${t}</div>`; }
+async function initSanteView(){
+  const host = document.getElementById('santeBody');
+  if(!host) return;
+  const sb = window.__sb;
+  if(!sb){ host.innerHTML = santeMsg("Synchronisation indisponible (hors-ligne ?). Reviens quand tu es connecté."); return; }
+  let sess;
+  try { sess = (await sb.auth.getSession()).data.session; } catch(e){ sess = null; }
+  if(!sess){ host.innerHTML = santeMsg("Connecte-toi avec ton code (pastille « Sync » en haut à droite) pour afficher tes données santé."); return; }
+  host.innerHTML = santeMsg("Chargement de tes données Whoop…");
+  const { data, error } = await sb.from('v_day')
+    .select('day,recovery,rhr,hrv,day_strain,asleep_min,onset_h,prev_strain')
+    .order('day').limit(5000);
+  if(error){ host.innerHTML = santeMsg("Erreur de lecture : " + error.message); return; }
+  if(!data || !data.length){ host.innerHTML = santeMsg("Aucune donnée Whoop dans ta base pour l'instant."); return; }
+  renderSante(host, data);
+}
+function _mean(a){ a = a.filter(x => x!=null && !isNaN(x)).map(Number); return a.length ? a.reduce((s,x)=>s+x,0)/a.length : null; }
+function santeTile(label,val,col){ return `<div class="sante-tile"><div class="st-v" style="color:${col}">${val}</div><div class="st-l">${label}</div></div>`; }
+function _bucketSleep(m){ if(m==null)return null; const h=m/60; if(h<6)return '<6h'; if(h<7)return '6-7h'; if(h<8)return '7-8h'; if(h<8.5)return '8-8.5h'; return '>8.5h'; }
+function _bucketBed(h){ if(h==null)return null; if(h<22)return 'av. 22h'; if(h<23)return '22-23h'; if(h<24)return '23h-0h'; if(h<25)return '0h-1h'; return 'ap. 1h'; }
+function _bucketStrain(s){ if(s==null)return null; if(s<6)return '<6'; if(s<10)return '6-10'; if(s<15)return '10-15'; return '≥15'; }
+function _bucketMeans(rows,keyFn,valFn,order){
+  const g={}; rows.forEach(r=>{ const k=keyFn(r), v=valFn(r); if(k==null||v==null||isNaN(v))return; (g[k]=g[k]||[]).push(Number(v)); });
+  return order.map(k=>{ const a=g[k]||[]; return {k, n:a.length, mean:a.length? a.reduce((s,x)=>s+x,0)/a.length : null}; });
+}
+function relBlock(title, buckets){
+  const vis = buckets.filter(b=>b.n>=15);
+  const rows = vis.map(b=>{
+    const w = b.mean!=null? Math.min(100,b.mean) : 0;
+    const fr = b.n<30;
+    const col = b.mean>=67?'#22c55e':(b.mean>=50?'#f59e0b':'#f87171');
+    return `<div class="rel-row"><span class="rl">${b.k}</span>
+      <div class="rtrack"><div class="rfill" style="width:${w}%;background:${col}"></div></div>
+      <span class="rv">${b.mean!=null?Math.round(b.mean)+'%':'—'}<span class="rn">n=${b.n}${fr?' ⚠':''}</span></span></div>`;
+  }).join('');
+  return `<div class="rel-block"><h4>${title}</h4>${rows||'<div class="disclaimer">pas assez de données (n&lt;15).</div>'}</div>`;
+}
+function lineCard(title, labels, values, col){
+  const pts = values.map((v,i)=>({i,v})).filter(p=>p.v!=null);
+  if(pts.length<2) return `<div class="line-card"><div class="lc-t">${title}</div><div class="disclaimer">pas assez de points.</div></div>`;
+  const W=600,H=120,pad=10, N=values.length;
+  const xs=i=> pad + (N>1? (i/(N-1)) : 0)*(W-2*pad);
+  const vmin=Math.min(...pts.map(p=>p.v)), vmax=Math.max(...pts.map(p=>p.v)), span=(vmax-vmin)||1;
+  const ys=v=> H-pad - ((v-vmin)/span)*(H-2*pad);
+  const d = pts.map((p,idx)=> (idx?'L':'M')+xs(p.i).toFixed(1)+' '+ys(p.v).toFixed(1)).join(' ');
+  const last=pts[pts.length-1];
+  return `<div class="line-card"><div class="lc-t">${title}<span class="lc-last" style="color:${col}">${last.v.toFixed(0)}</span></div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" style="height:auto;display:block">
+      <path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="${xs(last.i).toFixed(1)}" cy="${ys(last.v).toFixed(1)}" r="3.5" fill="${col}"/>
+    </svg>
+    <div class="lc-ax"><span>${labels[0]}</span><span>${labels[labels.length-1]}</span></div></div>`;
+}
+function renderSante(host, rows){
+  const last30 = rows.slice(-30);
+  const tiles = `<div class="sante-tiles">
+    ${santeTile('Récup', (v=>v!=null?Math.round(v)+'%':'—')(_mean(last30.map(r=>r.recovery))), '#22c55e')}
+    ${santeTile('HRV', (v=>v!=null?v.toFixed(0)+' ms':'—')(_mean(last30.map(r=>r.hrv))), '#3b82f6')}
+    ${santeTile('Pouls repos', (v=>v!=null?v.toFixed(0)+' bpm':'—')(_mean(last30.map(r=>r.rhr))), '#f59e0b')}
+    ${santeTile('Sommeil', (v=>v!=null?(v/60).toFixed(1)+' h':'—')(_mean(last30.map(r=>r.asleep_min))), '#a78bfa')}
+  </div>`;
+
+  const byMonth = {};
+  rows.forEach(r=>{ const m=(r.day||'').slice(0,7); if(m) (byMonth[m]=byMonth[m]||[]).push(r); });
+  const months = Object.keys(byMonth).sort();
+  const lbl = m => { const [y,mo]=m.split('-'); return mo+'/'+y.slice(2); };
+  const labels = months.map(lbl);
+  const trends = `<div class="sante-sec"><h3>📈 Tendances — moyenne par mois (${months.length} mois)</h3>
+    ${lineCard('Récupération (%)', labels, months.map(m=>_mean(byMonth[m].map(r=>r.recovery))), '#22c55e')}
+    ${lineCard('HRV (ms)', labels, months.map(m=>_mean(byMonth[m].map(r=>r.hrv))), '#3b82f6')}
+    ${lineCard('Pouls au repos (bpm)', labels, months.map(m=>_mean(byMonth[m].map(r=>r.rhr))), '#f59e0b')}
+  </div>`;
+
+  const sleepB = _bucketMeans(rows, r=>_bucketSleep(r.asleep_min), r=>r.recovery, ['<6h','6-7h','7-8h','8-8.5h','>8.5h']);
+  const bedB   = _bucketMeans(rows, r=>_bucketBed(r.onset_h),     r=>r.recovery, ['av. 22h','22-23h','23h-0h','0h-1h','ap. 1h']);
+  const strB   = _bucketMeans(rows, r=>_bucketStrain(r.prev_strain), r=>r.recovery, ['<6','6-10','10-15','≥15']);
+  const rel = `<div class="sante-sec"><h3>🔗 Ce qui va avec ta récupération</h3>
+    ${relBlock('Durée de sommeil → récup', sleepB)}
+    ${relBlock('Heure d\'endormissement → récup', bedB)}
+    ${relBlock('Strain de la veille → récup', strB)}
+    <div class="disclaimer">« Va avec », pas « cause ». Le n est affiché ; sous 30 c'est fragile (⚠), sous 15 c'est masqué.</div>
+  </div>`;
+
+  host.innerHTML = `<div class="sante-sec"><h3>🗓️ 30 derniers jours</h3>${tiles}</div>` + trends + rel;
+}
+</script>
+
 <script type="module">
 /* ============================================================
    SYNCHRONISATION SUPABASE — login par code, pull au chargement,
@@ -6312,6 +6442,7 @@ if ('serviceWorker' in navigator) {
   try {
     const mod = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
     sb = mod.createClient(SUPA_URL, SUPA_KEY);
+    window.__sb = sb;
   } catch(e){
     setChip('err','Sync indispo');
     chip.onclick = ()=> alert("Synchronisation indisponible (hors-ligne ?). L'app fonctionne normalement en local.");
@@ -6350,6 +6481,7 @@ if ('serviceWorker' in navigator) {
       if(vis('strengthPanel') && window.loadStrengthProfile){ window.loadStrengthProfile(); if(window.calculateAndRenderRadar) window.calculateAndRenderRadar(); }
       if(vis('historyPanel') && window.initHistoryView){ window.initHistoryView(); }
       if(vis('rehabPanel') && window.initRehabView){ window.initRehabView(); }
+      if(vis('santePanel') && window.initSanteView){ window.initSanteView(); }
     }catch(e){}
   }
   async function onLoggedIn(session){ uid = session.user.id; enablePush(); await pullAll(); }
